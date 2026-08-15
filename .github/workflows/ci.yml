@@ -1,0 +1,159 @@
+name: ci
+
+# `push` is filtered to the default branch and `pull_request` covers everything
+# else. Without the filter, a branch with a pull request open fires both
+# triggers and every commit is built twice — including on macOS, which is by far
+# the expensive half of this file.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancelling a superseded pull request run is free: the commit it was testing has
+# already been replaced. Cancelling a `main` run is not — nothing else ever tests
+# that commit, so a cancelled one is a hole in the record rather than a saved
+# minute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Nothing here writes anything and nothing here reads a secret. That is what lets
+# a pull request from a fork prove itself green exactly the way a branch does.
+# Keep it that way: the moment a job needs a token, forks stop being able to.
+permissions:
+  contents: read
+
+jobs:
+  # `check.sh` runs these three as its first steps and must keep running them —
+  # ADR-0030 is that the gate is one command, not a checklist. This is not a
+  # second gate, it is the cheap end of the same one brought forward. A `Lock:`
+  # naming a test that was renamed away is a mistake worth hearing in a minute
+  # rather than after a full macOS build, and it is ~26s of work measured, so
+  # running it in both places costs nothing worth counting.
+  #
+  # On Linux rather than macOS because that is the runner that starts soonest,
+  # and because these scripts are meant to run there anyway — the `uname` guard
+  # inside `check.sh` exists so the Linux half of CI can run the gate at all.
+  record:
+    name: decision record
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # No credentials left on disk: nothing in this job talks to git, and a
+      # token that is not there cannot be read by anything that runs later.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: ./scripts/adr-fixtures.sh
+      - run: ./scripts/adr-check.sh
+      - run: ./scripts/scratch-check.sh
+
+  macos:
+    name: core + apple shell
+    runs-on: macos-15
+    # The default is 360 minutes. The Swift suite puts ~571 mostly-@MainActor
+    # tests through a single lane, and this runner has 3 cores against the
+    # author's 14 — a test measured at 0.6s alone has been seen taking 116.9s
+    # under full-suite load. So the realistic failure is a run that never ends,
+    # and six hours of a hung macOS runner is worse than a red build: nobody
+    # watches it, and it teaches nothing. This is generous against the honest
+    # worst case and still fails inside the hour.
+    timeout-minutes: 60
+    env:
+      # Pinned, because ADRs in this repository cite measured SDK behaviour and a
+      # runner image update must not move the SDK under them. 26.3 (17C529) is
+      # the newest Xcode the macos-15 image carries; the author builds with 26.6
+      # (17F113), so this is one minor behind and nothing in the shell reaches
+      # past it — the newest WebKit API used tops out at macOS 15.2 and the
+      # source contains no `@available` above the 15.4 floor.
+      #
+      # This is `DEVELOPER_DIR` rather than `xcode-select -s` on purpose: it is
+      # visible in the file instead of hidden in runner state, it needs no sudo,
+      # and it reaches `cargo`'s C compiler as well as `swift`.
+      #
+      # macos-15 rather than macos-26 is a decision, not a default — see
+      # ADR-0102. macos-26 would give a byte-identical Xcode to the author's,
+      # which is exactly why it proves less.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Printed, not assumed. When this job fails in a year the first question is
+      # which compiler and which SDK, and the answer has to already be in the log
+      # — going back to find out is not possible once the image has moved on.
+      - name: toolchain
+        run: |
+          if [[ ! -d "$DEVELOPER_DIR" ]]; then
+            echo "::error::$DEVELOPER_DIR is gone. The macos-15 image dropped the pinned Xcode." >&2
+            echo "Pick another from the image manifest and pin it — do not fall back to the default:" >&2
+            echo "  https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md" >&2
+            echo "What this image actually has:" >&2
+            ls -d /Applications/Xcode_*.app >&2 || true
+            exit 1
+          fi
+          sw_vers
+          xcodebuild -version
+          swift --version
+          echo "macOS SDK $(xcrun --sdk macosx --show-sdk-version) at $(xcrun --sdk macosx --show-sdk-path)"
+          # No `rustc --version` here: this step runs before the toolchain is
+          # installed, so it would print the image's Rust rather than the one
+          # that builds the core. dtolnay/rust-toolchain logs the real one.
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # The Swift suite is the flaky half of this job today. Without this, one
+          # timing-fragile test failing throws away a Rust cache that was fine,
+          # and the next run pays for a cold build of 163 crates — a bundled
+          # SQLite among them — to learn the same thing again.
+          cache-on-failure: true
+          # `target/` is 2.3 GB on the author's machine. The repository cache
+          # ceiling is 10 GB, so letting every branch write its own is how the
+          # `main` cache gets evicted by a branch nobody is on any more.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The whole gate, and nothing smaller. Running `check.sh` rather than a
+      # copy of its steps is the point: a check added to the script is a check CI
+      # runs the same day, and CI cannot drift into being stricter or laxer than
+      # the machine the author verified on (ADR-0030).
+      #
+      # Two things deliberately absent:
+      #
+      # No `--no-parallel`. It would make CI green under conditions the author's
+      # `check.sh` never runs under, which is the divergence this job exists to
+      # prevent. If the suite needs serialising, it needs serialising in
+      # `scripts/check.sh` where everyone pays the same price.
+      #
+      # No retry. A rerun turns green from a fact into a probability, and ADR-0030
+      # names that as how this rule dies. A flaky test is a bug with a test
+      # attached, not a scheduling problem.
+      - run: ./scripts/check.sh
+
+  # Proves the core stays free of Apple assumptions well before the Linux engine
+  # host exists. Deliberately *not* `check.sh`: this runs the default feature set,
+  # where `store`, `ext`, `config`, `prose`, `provider` and `ffi` are all off, and
+  # that bare core building and passing is a property nothing else here checks —
+  # `check.sh` uses `--all-features` and would hide it.
+  linux-core:
+    name: core only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
