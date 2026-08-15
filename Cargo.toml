@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["crates/zer0-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/thezer0com/zer0"
+
+[workspace.dependencies]
+url = "2.5"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# ADR-0031: a match over a command or an action lists every variant.
+#
+# The rule was held by review and by nothing else, and the ADR says why: no test
+# can watch a compilation that never happened. This is the other half of the
+# answer — a lint, which is what the ADR named as the only thing that would
+# convert it from debt into a lock. The Swift half is the source scan in
+# `apple/Tests/Zer0ShellTests/SourceRuleTests.swift`.
+#
+# It is in `restriction` rather than in `all`, so `all = deny` above does not
+# reach it: restriction lints are deliberately opinionated and are meant to be
+# switched on one at a time, by a project that has decided the thing they
+# restrict.
+#
+# It is wider than the ADR, on purpose. The ADR is about `Action`,
+# `EngineCommand`, `UiCommand` and `Suggestion`; the lint fires on every enum
+# this crate matches, including `serde_json::Value` and `toml_edit::Item`, where
+# a wildcard is the only correct answer. Each of those carries an `#[allow]`
+# with a `reason`, and a silenced lint with no reason is the same wish in a new
+# costume — so the reason is the price of the allow, not decoration.
+wildcard_enum_match_arm = "deny"
