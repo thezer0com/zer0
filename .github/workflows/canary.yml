@@ -1,0 +1,230 @@
+name: canary
+
+# A canary build fires on every push to `main` (ADR-0109). It is the
+# population that absorbs breakage so stable does not have to, and its
+# cadence is "every commit someone pushed", not "every Friday". The
+# bundle id is `com.thezer0.canary` (resolve-bundle.sh), the profile
+# directory is `Zer0 Canary/`, and the appcast is `appcast-canary.xml`.
+#
+# Signing is conditional on a secret being present. Today the project
+# signs ad-hoc (ADR-0109, ADR-0108); when a Developer ID Application
+# identity exists, `ZER0_SIGN_IDENTITY_CANARY` carries it and the
+# sign.sh step turns on. The same gate guards notarisation and the
+# Sparkle appcast publish -- none of them can run without the secret
+# that precedes them.
+#
+# The WebKit engine is not built here. It is restored from the cache
+# written by build-webkit.yml, keyed on the tag in
+# scripts/webkit/version.txt. If that cache is missing the job fails
+# fast: a canary release without the pinned engine is no release at
+# all.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Canary is the hot branch. A new push supersedes the previous run:
+  # nobody consumes an in-flight canary build, and serialising them
+  # would make "every push to main" a polite fiction under load.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write  # the appcast publisher commits to gh-pages
+
+jobs:
+  build:
+    runs-on: blacksmith-6vcpu-macos-15
+    # 90, not 30, because of the WebKit source offer below: on a pin bump it
+    # clones ~7.4 GB and runs zstd -19 over ~5.3 GB of source on a 6-vcpu
+    # runner. The tarball is cached per tag, so steady-state runs stay short.
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: toolchain
+        run: |
+          if [[ ! -d "$DEVELOPER_DIR" ]]; then
+            echo "::error::$DEVELOPER_DIR is gone on the Blacksmith image." >&2
+            ls -d /Applications/Xcode_*.app >&2 || true
+            exit 1
+          fi
+          xcodebuild -version
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # The release build is the expensive half of this job after the
+          # engine restore. Losing the Rust cache to a flaky Swift step
+          # would tax every canary push with a cold 163-crate rebuild.
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: read WebKit tag
+        id: tag
+        run: |
+          tag="$(sed -n 's/^WEBKIT_TAG=//p' scripts/webkit/version.txt | tail -1)"
+          [[ -n "$tag" ]] || { echo "no WEBKIT_TAG in version.txt" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: restore WebKit build
+        id: webkit
+        uses: actions/cache@v4
+        with:
+          path: webkit-build.tar.zst
+          key: webkit-${{ steps.tag.outputs.tag }}
+          fail-on-cache-miss: true
+
+      - name: extract WebKit
+        # Restore puts the tarball at the repo root; embed-webkit.sh
+        # reads from ~/.cache/zer0/webkit/src/WebKitBuild/Release, so
+        # the unpack lands there. Keeping the path identical to a
+        # local developer's means scripts do not branch on "are we in
+        # CI".
+        run: |
+          mkdir -p ~/.cache/zer0/webkit/src/WebKitBuild
+          tar -x -I zstd -f webkit-build.tar.zst \
+            -C ~/.cache/zer0/webkit/src/WebKitBuild
+
+      - name: compute version
+        id: ver
+        # Runs before the build because the bundle carries the answer:
+        # bundle.sh stamps these into CFBundleShortVersionString and
+        # CFBundleVersion (ADR-0111). Canary versions are unambiguous and
+        # monotonically sortable, and carry the commit they came from so a bug
+        # report names the exact binary. `0.0.0-canary.<timestamp>-<sha>` is
+        # not SemVer-pretty but it is honest, and Sparkle ranks on
+        # sparkle:version not shortVersionString. The bundle's CFBundleVersion
+        # and the appcast's sparkle:version both come from the one door --
+        # bundle_version_for_channel in apple/scripts/resolve-bundle.sh --
+        # and publish-appcast.sh refuses a disagreement, so they cannot drift.
+        run: |
+          ts="$(date -u +%Y%m%d%H%M)"
+          sha="$(git rev-parse --short HEAD)"
+          v="0.0.0-canary.${ts}-${sha}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "archive=zer0-canary-${v}.zip" >> "$GITHUB_OUTPUT"
+          . apple/scripts/resolve-bundle.sh
+          echo "bundle_version=$(bundle_version_for_channel canary "$v")" >> "$GITHUB_OUTPUT"
+
+      - name: build canary
+        env:
+          ZER0_CHANNEL: canary
+          ZER0_BUNDLE_VERSION: ${{ steps.ver.outputs.bundle_version }}
+          ZER0_SHORT_VERSION: ${{ steps.ver.outputs.version }}
+          ZER0_EMBED_WEBKIT: ~/.cache/zer0/webkit/src/WebKitBuild/Release
+          ZER0_SPARKLE_PUBLIC_KEY: ${{ secrets.ZER0_SPARKLE_PUBLIC_KEY }}
+        run: ./scripts/build.sh release
+
+      # Secrets cannot be read directly in a job-level `if`. A step that
+      # exports their presence is the standard pattern; it keeps the
+      # value off the log and gives the downstream steps one boolean.
+      - name: detect signing secrets
+        id: signing
+        # Three booleans, one per gate. Each line reads exactly one secret;
+        # the value never lands in the log. The shape is the standard way
+        # to gate a step on a secret being present, because `if:` cannot
+        # read secrets directly.
+        run: |
+          si="${{ secrets.ZER0_SIGN_IDENTITY_CANARY }}"
+          no="${{ secrets.ZER0_NOTARY_PROFILE }}"
+          sp="${{ secrets.ZER0_SPARKLE_PRIVATE_KEY }}"
+          [[ -n "$si" ]] && echo "sign=true"      >> "$GITHUB_OUTPUT" || echo "sign=false"      >> "$GITHUB_OUTPUT"
+          [[ -n "$no" ]] && echo "notarize=true"  >> "$GITHUB_OUTPUT" || echo "notarize=false"  >> "$GITHUB_OUTPUT"
+          [[ -n "$sp" ]] && echo "sparkle=true"   >> "$GITHUB_OUTPUT" || echo "sparkle=false"   >> "$GITHUB_OUTPUT"
+
+      - name: sign
+        if: steps.signing.outputs.sign == 'true'
+        env:
+          ZER0_CHANNEL: canary
+          ZER0_SIGN_IDENTITY: ${{ secrets.ZER0_SIGN_IDENTITY_CANARY }}
+        run: ./scripts/sign.sh
+
+      - name: notarize
+        if: steps.signing.outputs.notarize == 'true'
+        env:
+          ZER0_CHANNEL: canary
+          ZER0_NOTARY_PROFILE: ${{ secrets.ZER0_NOTARY_PROFILE }}
+        run: ./scripts/notarize.sh
+
+      - name: archive
+        run: |
+          ditto -c -k --keepParent "apple/.build/Zer0 Canary.app" "${{ steps.ver.outputs.archive }}"
+
+      - name: upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zer0-canary-${{ steps.ver.outputs.version }}
+          path: ${{ steps.ver.outputs.archive }}
+          retention-days: 30
+
+      # The appcast publisher is the last step on purpose. It mutates a
+      # branch (`gh-pages`) that lives outside the one that triggered
+      # the workflow, and keeping it last means every failure upstream
+      # shows up as "no appcast update" rather than as a stale entry
+      # pointing at a binary that does not exist.
+      #
+      # The publish is two steps: attach the archive to a GitHub Release the
+      # appcast enclosure points at, then prepend the signed entry. The
+      # release goes up first so the URL Sparkle advertises is reachable
+      # before the entry that advertises it is; reversing that order ships
+      # an appcast whose download 404s until the release catches up.
+      - name: upload bundle to release
+        if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "canary-${{ steps.ver.outputs.version }}" \
+            --prerelease \
+            --title "zer0 Canary ${{ steps.ver.outputs.version }}" \
+            --notes "Automated canary build from ${{ github.sha }}." \
+            "${{ steps.ver.outputs.archive }}"
+
+      # LGPL 6(a) (docs/licensing.md section 6): the canary bundle embeds
+      # the same pinned WebKit as stable, so the same source offer attaches
+      # to the canary release. Deterministic per tag; cached like
+      # build-webkit.yml's artefact so only a pin bump pays the compression.
+      # Gated like the bundle upload above: without the release there is
+      # nothing to attach the asset to.
+      - name: restore WebKit source offer
+        if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache@v4
+        with:
+          path: dist-source
+          key: webkit-source-${{ steps.tag.outputs.tag }}
+
+      - name: build WebKit source offer
+        if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        run: |
+          ./scripts/source-offer.sh --out dist-source \
+            --release "canary-${{ steps.ver.outputs.version }}"
+
+      - name: upload WebKit source offer
+        if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "canary-${{ steps.ver.outputs.version }}" \
+            dist-source/webkit-source-*.tar.zst dist-source/SHA256SUMS --clobber
+
+      - name: publish appcast
+        if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZER0_SPARKLE_PRIVATE_KEY: ${{ secrets.ZER0_SPARKLE_PRIVATE_KEY }}
+        run: |
+          ./scripts/publish-appcast.sh \
+            --channel canary \
+            --version "${{ steps.ver.outputs.version }}" \
+            --bundle-version "${{ steps.ver.outputs.bundle_version }}" \
+            --archive "${{ steps.ver.outputs.archive }}" \
+            --download-url "https://github.com/${{ github.repository }}/releases/download/canary-${{ steps.ver.outputs.version }}/${{ steps.ver.outputs.archive }}" \
+            --sparkle-private-key "$ZER0_SPARKLE_PRIVATE_KEY"
