@@ -1,0 +1,132 @@
+name: build-webkit
+
+# The long pole of the release pipeline. A clean WebKit build at the pinned
+# tag is ~35 min (measured in scripts/webkit/README.md); a release build of
+# the rest of the browser against a cached engine is ~10 min (ADR-0109).
+# This job exists to keep the 35 min off the canary/stable jobs.
+#
+# The trigger is narrow on purpose. `paths: scripts/webkit/version.txt`
+# fires only when the pin moves -- the tag has sat at WebKit-7624.4.5.14.1
+# since 2026-08-08 and there is no reason to spend 35 min rebuilding the
+# same revision. `workflow_dispatch` covers the human-driven case (a
+# rebuild after a runner image change, a corrupted artefact, a patched
+# build flag).
+#
+# ADR-0109 names Blacksmith.sh as the macOS runner. Blacksmith exposes
+# its own labels (https://docs.blacksmith.sh/introduction/quickstart);
+# `blacksmith-6vcpu-macos-15` is the one that matches the `macos-15`
+# floor ADR-0102 picks for `ci.yml`. The Xcode pinned below has to exist
+# on the Blacksmith image -- if the image manifest does not carry it,
+# pick another and pin it here, do not fall back to the default.
+on:
+  push:
+    paths:
+      - 'scripts/webkit/version.txt'
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # Two pushes to version.txt in quick succession build the same tag twice
+  # if the first has not finished. Serialise them: the second would either
+  # reproduce the first's artefact or replace a failed one, and neither
+  # justifies 35 min of concurrent runner time.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: blacksmith-6vcpu-macos-15
+    # WebKit's build-webkit has no internal cap; the GitHub Actions timeout
+    # is the only wall. 90 min is generous against the measured 35m34s clean
+    # build plus the shallow clone, and it is short enough that a wedged
+    # build fails inside a working day rather than overnight.
+    timeout-minutes: 90
+    env:
+      # Pinned for the same reason `ci.yml` pins it: a runner image update
+      # must not move the SDK under a build whose output is cached against
+      # a tag. Xcode 26+ is required because WebKit now compiles .metal
+      # shaders via the separately-downloaded Metal toolchain.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: toolchain
+        run: |
+          if [[ ! -d "$DEVELOPER_DIR" ]]; then
+            echo "::error::$DEVELOPER_DIR is gone. The Blacksmith macos-15 image dropped the pinned Xcode." >&2
+            echo "What this image actually has:" >&2
+            ls -d /Applications/Xcode_*.app >&2 || true
+            exit 1
+          fi
+          xcodebuild -version
+          # Xcode 26 moved the Metal compiler out of the default install.
+          # WebKit's build-webkit dies partway through with a driver error
+          # that says nothing about a missing download if this is absent.
+          xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: read pinned tag
+        id: tag
+        # Reads version.txt the same way scripts/webkit/common.sh does --
+        # as data, not as a sourced script. A stray backtick in a comment
+        # must not run.
+        run: |
+          tag="$(sed -n 's/^WEBKIT_TAG=//p' scripts/webkit/version.txt | tail -1)"
+          [[ -n "$tag" ]] || { echo "no WEBKIT_TAG in version.txt" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # `lookup-only: true` skips the restore download; we only need to
+      # know whether the key exists. The artefact is large; pulling it
+      # back onto the runner that just produced it would waste bandwidth
+      # and time.
+      - name: check cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: webkit-build.tar.zst
+          key: webkit-${{ steps.tag.outputs.tag }}
+          lookup-only: true
+
+      - name: fetch + build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          # WEBKIT_DIR is ~/.cache/zer0/webkit by default (version.txt).
+          # Leaving it at the default keeps the cache paths below honest.
+          ./scripts/webkit/fetch.sh
+          ./scripts/webkit/build.sh --release
+
+      - name: pack artefact
+        if: steps.cache.outputs.cache-hit != 'true'
+        # Only WebKitBuild/Release is consumed downstream (by
+          # apple/scripts/embed-webkit.sh). The source tree, debug
+          # products and the build log stay out -- they are several GB
+          # that no downstream job reads and that the cache ceiling
+          # does not absorb for free.
+        run: |
+          tar -c -I 'zstd -19 -T0' \
+            -f webkit-build.tar.zst \
+            -C ~/.cache/zer0/webkit/src/WebKitBuild Release
+
+      # `actions/cache@v4` writes the entry on job success only. The path
+      # above is the single file `webkit-build.tar.zst`; restore in
+      # canary.yml / stable.yml pulls exactly that file.
+      - name: save artefact to cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: webkit-build.tar.zst
+          key: webkit-${{ steps.tag.outputs.tag }}
+
+      # A 90-day retention window on the artefact upload is a backstop:
+      # if the cache layer evicts the entry (cache is best-effort, the
+      # upload is not), the artefact is still reachable to re-seed it.
+      - name: upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-build-${{ steps.tag.outputs.tag }}
+          path: webkit-build.tar.zst
+          retention-days: 90
