@@ -1,0 +1,75 @@
+# zer0
+#
+# This file is yours. Edit it in an editor, keep it in a dotfiles repository,
+# symlink it, diff it. zer0 picks up changes while it is running.
+#
+# There are no passwords or API keys in here, and there is nowhere to put one.
+# `credential` names an entry in your Keychain; the key itself lives there.
+# That is what makes this file safe to commit.
+
+[chat]
+# Which provider a new chat opens on. Delete the line to use the first one
+# below that is switched on and has its key.
+default_provider = "anthropic"
+
+
+# ── Providers ────────────────────────────────────────────────────────────────
+# kind: anthropic | openai | openai-compatible | ollama
+# Anything else that speaks OpenAI's shape — a work gateway, a proxy, something
+# you host — is `openai-compatible` with a `base_url` saying which.
+
+[[provider]]
+id = "anthropic"
+name = "Anthropic"
+kind = "anthropic"
+# The Keychain entry holding the key. Add it from Settings, or in
+# Keychain Access under the name "zer0".
+credential = "anthropic"
+models = ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"]
+default_model = "claude-sonnet-4"
+
+[[provider]]
+id = "ollama"
+name = "Ollama (local)"
+kind = "ollama"
+base_url = "http://localhost:11434"
+# No credential: nothing on localhost is asking for one.
+# No models: zer0 asks the server what it has.
+
+# Kept, and out of the picker until you want it back.
+[[provider]]
+id = "openai"
+name = "OpenAI"
+kind = "openai-chat"
+# Always written down, so this file says where your conversations go.
+base_url = "https://api.openai.com"
+credential = "openai"
+models = ["gpt-5", "gpt-5-mini"]
+enabled = false
+
+
+# ── MCP servers ──────────────────────────────────────────────────────────────
+# transport: stdio (a program zer0 starts) | http (a URL zer0 connects to)
+
+[[mcp_server]]
+id = "github"
+name = "GitHub"
+transport = "stdio"
+command = "gh-mcp"
+args = ["--stdio"]
+
+# Plain values. Anything that looks like a key is refused here.
+[mcp_server.env]
+GH_HOST = "github.com"
+
+# Values that are keys. Left of the "=" is the variable the server reads;
+# right of it is the Keychain entry the value comes from.
+[mcp_server.secret_env]
+GITHUB_TOKEN = "github"
+
+[[mcp_server]]
+id = "grafana"
+name = "Grafana"
+transport = "http"
+url = "http://localhost:7332/mcp/sse"
+credential = "grafana"
