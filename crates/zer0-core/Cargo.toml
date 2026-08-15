@@ -1,0 +1,74 @@
+[package]
+name = "zer0-core"
+description = "Browser state model and reducer for zer0. Engine-agnostic, UI-agnostic."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "zer0_core"
+# staticlib is what the Apple shell links against; lib keeps `cargo test` working.
+crate-type = ["lib", "staticlib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+required-features = ["ffi"]
+
+[features]
+# Off by default: a Linux engine host has no reason to pull in uniffi.
+ffi = ["dep:uniffi", "store", "ext", "config", "prose", "provider"]
+# SQLite session persistence. Off by default so a bare core stays dependency-light.
+store = ["dep:rusqlite", "dep:thiserror"]
+    # Chrome extension installation: CRX parsing, unpacking, manifest reading.
+    ext = ["dep:zip", "dep:serde", "dep:thiserror", "dep:rsa", "dep:p256"]
+# Talking to a language model: request building and stream decoding. Pure
+# translation, no I/O, so a host on any platform performs the request itself.
+provider = []
+# Reading a model's reply as Markdown. Off by default for the same reason as
+# the rest: a headless core that never sets a reply as prose has no reason to
+# link a Markdown parser.
+prose = ["dep:comrak"]
+# The hand-editable configuration file: parsing, defaults, format-preserving
+# writes. Off by default for the same reason as the rest.
+config = ["dep:toml_edit", "dep:thiserror"]
+
+[dependencies]
+url.workspace = true
+uniffi = { version = "0.32", features = ["cli"], optional = true }
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
+thiserror = { version = "2.0.20", optional = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+# Not optional: MCP is part of a bare core. The wire format is JSON-RPC and an
+# approval is bound to a hash, so neither of these is behind a feature the way
+# CRX unpacking is.
+# `preserve_order` for one reason: `ext::compat` rewrites somebody else's
+# `manifest.json`, and the promise made about that rewrite is that it is
+# bounded and readable. Without it every key comes back sorted, so a person
+# diffing the package against the store's copy sees the whole file move and
+# cannot find the two lines that actually changed.
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+sha2 = "0.11.0"
+# CRX3 signature verification (ADR-0113). `rsa` verify is PKCS#1 v1.5 with
+# SHA-256 — the field name `sha256_with_rsa` suggests PSS and suggests wrong;
+# that is what the store signs with, measured against real packages. `p256`
+# covers the ECDSA proofs the store also attaches. Both pure Rust, like the
+# rest of the tree; no C, same reason as comrak below.
+rsa = { version = "0.9", default-features = false, features = ["std"], optional = true }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "pkcs8"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+# `parse` for reading with spans, `display` for writing back. No `serde`: the
+# config is walked as a document so every key keeps the line it was read from,
+# which is what lets an error name a line instead of a field path.
+toml_edit = { version = "0.25.13", default-features = false, features = ["parse", "display"], optional = true }
+# CommonMark and GFM, for reading a model's reply (ADR-0070). BSD-2-Clause,
+# which our MIT accommodates, and thirteen crates of pure Rust with no C in
+# them. `default-features = false` on purpose: the defaults carry `cli` (clap,
+# shell-words, xdg) and `syntect-onig`, and oniguruma is a C regex engine with
+# no business inside a browser. Which extensions are switched on is argued in
+# `prose::options`, not here.
+comrak = { version = "0.54.0", default-features = false, optional = true }
+
+[lints]
+workspace = true
