@@ -1,0 +1,40 @@
+# The WebKit revision zer0 builds against.
+#
+# Format: KEY=value, one per line. Blank lines and lines starting with # are
+# ignored. Nothing here is evaluated by a shell, so no quoting and no $VARS.
+#
+# WEBKIT_TAG must be a tag that exists in https://github.com/WebKit/WebKit.
+# Prefer a `WebKit-*` tag over a branch or over `main`: those tags are the
+# source drops Apple shipped a Safari from, so they built and passed a release
+# cycle. `main` is whatever landed in the last hour and regularly does not
+# build.
+#
+# How to pick / update the tag:
+#
+#   git ls-remote --tags --refs https://github.com/WebKit/WebKit.git \
+#     'refs/tags/WebKit-*' | sed 's|.*refs/tags/||' | sort -V | tail -20
+#
+# Then edit WEBKIT_TAG below and re-run ./fetch.sh (it is idempotent) followed
+# by ./build.sh. Nothing else in the repo hardcodes a version.
+#
+# Correlating a tag with the WebKit you already have: read the system
+# framework's CFBundleVersion,
+#
+#   defaults read /System/Library/Frameworks/WebKit.framework/Versions/A/\
+#   Resources/Info.plist CFBundleVersion
+#
+# On macOS 26.6 that reads 21624.4.5.11.5, whose trailing components line up
+# with the WebKit-7624.4.5.11.* tags. So the tag pinned below is a few
+# stabilisation revisions ahead of the system copy, which is the point of
+# building it at all.
+#
+# Verified 2026-08-08: newest WebKit-* tag on WebKit/WebKit was
+# WebKit-7624.4.5.14.1.
+
+WEBKIT_TAG=WebKit-7624.4.5.14.1
+
+# Where the source tree and build products live. Always overridable from the
+# environment; this is only the default. Kept outside the repo on purpose: the
+# checkout alone is several GB and a release build is tens of GB more, and none
+# of it should ever be a candidate for `git add`.
+WEBKIT_DIR_DEFAULT=~/.cache/zer0/webkit

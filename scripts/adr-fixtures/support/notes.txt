@@ -1,0 +1,3 @@
+A lock target for the adr-check fixtures that is deliberately not a thing the
+gate can run. Pointing a lock at it must fail: a lock is a Rust test, a Swift
+test or a shell check, and a decision cannot be defended by a text file.
