@@ -1,0 +1,61 @@
+name: advisories
+
+# Separate from `ci` because it answers a different question on a different
+# clock. An advisory is published when it is published; whether anyone pushed
+# that week has nothing to do with it. A `schedule:` inside `ci.yml` would drag
+# the macOS job along with it every Monday for no reason.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, off the hour: everything cron'd at :00 on GitHub queues together.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # This blocks, and the reason is what the program is. A browser is the process
+  # on the machine that eats the most hostile input, and 163 crates down the lock
+  # file it links a bundled SQLite, a zip reader and a Markdown parser — which is
+  # very close to a list of the things advisories are actually about.
+  #
+  # `cargo audit` with no flags fails on vulnerabilities and only warns on
+  # unmaintained, unsound and yanked. So a red here is a real advisory against
+  # something this repository ships, not a maintainer who stopped replying.
+  #
+  # The cost is the case everyone dreads: an advisory published on Tuesday turns
+  # an unrelated pull request red on Wednesday. That is the correct colour. What
+  # is true on Wednesday is that this repository ships a known-vulnerable
+  # dependency, and that is true of the pull request too. The escape hatches are
+  # a minute of work each — `cargo update`, or an entry in `.cargo/audit.toml`
+  # under `[advisories] ignore` carrying a sentence saying why — and both leave a
+  # record. A non-blocking version of this job leaves none, because nobody reads
+  # a green run.
+  #
+  # Deliberately not `cargo deny`: it does the same job here plus licence and
+  # duplicate-crate policy, and it needs a `deny.toml` to say anything at all.
+  # That is a configuration file's worth of decisions nobody has asked for yet.
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      # A prebuilt binary rather than `cargo install cargo-audit`, which costs
+      # two to three minutes of compiling on every run to reach the same place.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Reads `Cargo.lock`. It builds nothing, so there is nothing here worth
+      # caching and no toolchain assumption to get wrong.
+      - run: cargo audit

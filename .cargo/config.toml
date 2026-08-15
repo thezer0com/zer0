@@ -1,0 +1,11 @@
+# The bundled SQLite is compiled by the `cc` crate, which takes its deployment
+# target from MACOSX_DEPLOYMENT_TARGET and, when that is unset, defaults to the
+# installed SDK's own version — 26.5 on this machine, far above the app's 15.4
+# floor. apple/scripts/build-core.sh exports the variable, but a bare
+# `cargo build`, `cargo test` or `cargo clippy` — including the ones
+# scripts/check.sh runs — does not, and the object those invocations leave in
+# target/ is the one a later scripted build links. Setting it here covers every
+# cargo invocation under the workspace. `[env]` does not force: a value already
+# present in the environment still wins.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "15.4"
