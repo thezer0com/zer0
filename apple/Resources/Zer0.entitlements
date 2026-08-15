@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- ADR-0005 + ADR-0109: the embedding mechanism relies on the
+	     LC_DYLD_ENVIRONMENT load command carrying DYLD_FRAMEWORK_PATH into
+	     the process, so the app loads the WebKit in Contents/Frameworks
+	     rather than the one dyld pulls out of the shared cache. Hardened
+	     runtime makes dyld drop every DYLD_* load command unless the binary
+	     carries this entitlement, so notarisation (which requires
+	     hardened runtime) needs it. Orion ships the same entitlement for
+	     the same reason.
+
+	     This is a real widening: it reopens every DYLD_* variable for the
+	     process, not only ours. The scope is the process, not the kernel,
+	     and no third-party code runs in the UI process. That is the
+	     mitigation ADR-0109 records. -->
+	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
+	<true/>
+
+	<!-- The web content process JITs JavaScriptCore and needs both of these
+	     to allocate writable+executable memory under hardened runtime.
+	     They are present here so a helper that inherits the app's
+	     entitlements keeps JIT, and they are independently present in the
+	     WebKit XPC services' own entitlements, which
+	     apple/scripts/embed-webkit.sh preserves during embedding and
+	     scripts/sign.sh re-signs without overwriting. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+
+	<!-- Network process speaks to the network under a sandbox that needs
+	     network.client. Same inheritance note as allow-jit above. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- TCC entitlements for site permissions (ADR-0056). The usage
+	     descriptions in Info.plist are what TCC puts in its dialog; these
+	     are what the sandbox actually checks before letting the call
+	     through. -->
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.microphone</key>
+	<true/>
+
+	<!-- Downloads write to ~/Downloads. NSDownloadsFolderUsageDescription
+	     would live in Info.plist for the prompt; this is the sandbox
+	     grant. -->
+	<key>com.apple.security.files.downloads.read-write</key>
+	<true/>
+</dict>
+</plist>
