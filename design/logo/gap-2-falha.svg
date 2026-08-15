@@ -1,0 +1,9 @@
+<!-- zer0 / gap-2-fault: same removal, narrower gap (16u), but the two halves slip
+     14u along the cut, like a geological fault. The silhouette gains a step: the
+     cut shows up in the outer contour before the inner gap becomes visible.
+     CHOSEN as the mark — see zer0.svg, which is the canonical copy. -->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M73.98 190.33L96.84 167.48A48 72 0 0 0 176.03 88.29L200.33 63.98A80 104 0 0 1 73.98 190.33ZM55.67 186.02L79.97 161.71A48 72 0 0 1 159.16 82.52L182.02 59.67A80 104 0 0 0 55.67 186.02Z"/>
+</svg>

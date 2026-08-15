@@ -1,0 +1,47 @@
+<!--
+  zer0 — the mark, hinted for small sizes.
+
+  Same idea as zer0.svg: a zero cut on the diagonal, its two halves slipped
+  along the cut. This one is redrawn for the sizes where the canonical file
+  stops working. zer0.svg says it itself: "below about 24px the cut degrades
+  into a notch and the mark reads as a plain O". Rendered at 16px inside the
+  macOS icon grid the canonical mark gives a 2.1px ring, a 1.0px gap and a
+  0.9px slip, all of it below the pixel, all of it gone. What is left is an O.
+
+  Type designers call the fix hinting: redraw the glyph for the size instead of
+  scaling the drawing down and hoping. Nothing here is a "cleaned up" version of
+  the canonical mark. It is a second drawing of the same idea, sized so that
+  every feature that carries the idea lands on at least one whole pixel.
+
+  What changed, and why each change earns its place:
+
+  - Ring thicker, 32u -> 44u. At 16px this is the difference between a 2.1px
+    ring, which antialiasing turns to grey mush, and a 3.0px one, which stays
+    black. Below three pixels a curved stroke has no straight run to sit on.
+  - Gap wider, and slip longer. Both roughly the same multiple as the ring, so
+    the proportions still read as the same mark rather than a thick ring with a
+    hairline crack in it. At 16px the gap lands at 1.5px and the slip at 1.4px:
+    each is now a pixel the eye can find.
+  - Shorter and narrower overall, 80x104 -> 72x94. Counter-intuitive, but the
+    icon grid scales the mark by its tallest dimension, so every unit of height
+    removed buys thickness everywhere else. Slipping the halves also spreads the
+    mark sideways, so trimming the width keeps height the constraint and not
+    the other way round.
+  - Counter (the hole) kept deliberately large, 56x100u. A zero that loses its
+    counter is a dot. At 16px it survives as roughly 4x7px.
+
+  Geometry: an elliptical ring, 72x94 outer and 28x50 inner, centred on
+  128,128, cut at 45 degrees. Each half is then translated 22u/2 perpendicular
+  to the cut and 20u/2 along it, in opposite directions.
+
+  Where to use it: 16px and 32px, which is 16pt at 1x and 2x and 32pt at 1x.
+  From 64px up the canonical mark is legible and is the one to draw.
+  apple/scripts/make-icon.sh does that routing.
+
+  Same technical contract as zer0.svg (no <text>, no stroke, transform, mask
+  or clipPath, no width/height, fill="currentColor"), and for the same reasons.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M200.01 71.55A72 94 0 0 1 85.69 185.87L118.42 153.14A28 50 0 0 0 167.28 104.28ZM55.99 184.45A72 94 0 0 1 170.31 70.13L137.58 102.86A28 50 0 0 0 88.72 151.72Z"/>
+</svg>

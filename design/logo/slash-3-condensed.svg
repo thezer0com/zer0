@@ -1,0 +1,16 @@
+<!--
+  zer0 / slash-3-condensed
+  Densest bet: a condensed zero (132x200, ratio 0.66) with modulated weight -
+  stems 28 against 22 on the top/bottom arcs - cut by a heavy 24-unit slash at a
+  shallow 52deg. The shallow angle throws the slash sideways instead of upward, so
+  this is the widest-feeling and shortest mark of the three (bbox 144x200) while
+  the overhang stays tight at ~20, the smallest of the set.
+  The slash sits 38deg off the counter's vertical axis, which is what keeps a
+  narrow counter from reading as a blur; counter is 76x156 so each lobe still
+  clears ~2.8px at 16x16.
+  Point-symmetric about (128,128): optical center is the canvas center.
+-->
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="zer0">
+  <path fill="currentColor" fill-rule="evenodd" d="M 62 128 A 66 100 0 1 0 194 128 A 66 100 0 1 0 62 128 Z M 90 128 A 38 78 0 1 0 166 128 A 38 78 0 1 0 90 128 Z"/>
+  <path fill="currentColor" d="M 200.25 55.01 L 181.34 40.23 L 55.75 200.99 L 74.66 215.77 Z"/>
+</svg>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zer0 logo — variant 2 "fortyfive"
+  Perfect circular ring, cut at 45 degrees, lighter ring.
+
+  MODULE
+    u = 256 / 32 = 8. Every number below is an integer multiple of u.
+
+  RING (perfect circle)
+    center    C = (128, 128)        = 16u, 16u
+    outer     R = 96                = 12u
+    thickness t = 24                =  3u        = R/4
+    inner     r = R - t = 72        =  9u        = 3R/4
+
+    Why R = 96 again: all three variants share the same cap height,
+    2R = 192 = 24u. They are interchangeable at one optical size without
+    rescaling. R is fixed by the family, not re-decided per variant.
+
+    Why t = R/4 and not R/3 (variant 1): this is the axis the set
+    explores. R/4 opens the counter from 2R/3 to 3R/4 and lets the slash
+    carry the same weight as the ring instead of half of it. The mark
+    trades robustness for air.
+
+  CUT (45-degree parallelogram, rising left to right)
+    centerline endpoints  (128 - r, 128 + r) -> (128 + r, 128 - r)
+                        = (56, 200) -> (200, 56)
+
+    Those are the opposite corners of the square circumscribed about the
+    inner circle. Not a chosen length: the only square in the system that
+    the inner circle defines. Radial reach is r*sqrt(2) = 101.82, an
+    overshoot of 5.82 past R — tight, and produced rather than picked.
+
+    horizontal width  W = 32        =  4u
+    perpendicular weight = W / sqrt(2) = 16*sqrt(2) = 22.627 = 0.943 t
+
+    At 45 degrees integer coordinates and integer perpendicular weight
+    cannot both exist. Coordinates win; the weight is the exact irrational
+    that follows. W = 4u is the only grid value landing near t, and it
+    lands on the correct side: 5.7% lighter, which is the standard optical
+    relief a diagonal needs against a curve of equal measure. W = 5u would
+    give 28.28 = 1.18 t, visibly heavy.
+
+  TERMINALS
+    Flat, cut on the x-axis (parallel to the baseline), not perpendicular
+    to the slash — the convention of the solidus in a grotesque. They fall
+    on y = 128 -/+ r = 56 and 200, the horizontal tangents of the inner
+    circle. Corner distances from center: 91.21 (buried inside the ring
+    band, so it fuses) and 113.70 (a wedge clearing R by 17.7). The
+    asymmetry is what makes the terminal read as cut rather than pointed.
+
+  DIRECTION
+    The slash rises left to right, like the solidus and like the Danish O.
+    The prohibition sign falls left to right. Direction is the cheapest
+    available defense against that reading and it costs nothing.
+
+  OPTICAL CENTERING
+    The ring is bi-symmetric; the parallelogram has 180-degree rotational
+    symmetry about (128, 128), so the ink centroid is unmoved. No offset
+    applied. Combined bounding box is exactly 192 x 192.
+
+  16 x 16
+    outer 12px · ring 1.5px · counter 9px · slash 1.4px. Rasterised and
+    inspected: the ring greys out at 16px exactly as the numbers predict.
+    This is the display variant, not the favicon.
+
+  COLLISION RISK — measured, not estimated
+    Highest of the three, and worse than intended. Rendered at 32px and
+    64px this reads as the prohibition / no-signal sign, full stop. The
+    intended defense (slash rising left to right, as in the solidus and
+    the Danish O, where the prohibition sign falls) does not survive
+    contact: the sign is drawn in both directions in the wild, so
+    direction carries no signal. The thin ring at R/4 makes it worse by
+    matching the proportion of the actual pictogram.
+
+    Kept in the set as the honest result of the 45-degree axis, not as a
+    recommendation. If this direction is pursued, the ring must go heavier
+    than R/4 and the slash must stop short of breaking the outer contour.
+    Secondary reading, Danish O or the empty set, is survivable for a
+    product called zer0. The prohibition reading is not.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd" d="M 32 128 A 96 96 0 1 0 224 128 A 96 96 0 1 0 32 128 Z M 56 128 A 72 72 0 1 0 200 128 A 72 72 0 1 0 56 128 Z"/>
+  <path fill="currentColor" d="M 40 200 L 184 56 L 216 56 L 72 200 Z"/>
+</svg>

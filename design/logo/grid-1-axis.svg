@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zer0 logo — variant 1 "axis"
+  Perfect circular ring, vertical cut on the y-axis.
+
+  MODULE
+    u = 256 / 32 = 8. Every number below is an integer multiple of u.
+    Halves appear only where an even multiple is split by the axis of
+    symmetry (16 -> 8), never as a new value.
+
+  RING (perfect circle)
+    center    C = (128, 128)        = 16u, 16u   — center of the viewBox
+    outer     R = 96                = 12u        = 3/8 of the viewBox side
+    thickness t = 32                =  4u        = R/3
+    inner     r = R - t = 64        =  8u        = 2R/3
+
+    Why R = 96 and not more: the margin left over is 128 - 96 = 32 = t.
+    The clear space around the mark equals the weight of the mark. One
+    number governs both, so the icon can be padded without a second
+    decision.
+
+    Why t = R/3 and not R/4 or R/2: R/3 is the heaviest fraction that
+    still leaves the counter (2R/3 = 64) wider than twice the ring.
+    The void stays the subject; the ring stays the frame.
+
+  CUT (vertical bar)
+    width  w = 16                   =  2u        = t/2 = R/6
+    span   x in [120, 136]          = 128 -/+ w/2
+    span   y in [32, 224]           = 128 -/+ R
+
+    Why w = t/2: a vertical stroke at 90 degrees needs no optical relief,
+    so the only question is weight. At full t the mark reads as Greek phi,
+    whose stem equals its bowl. At t/2 the bar reads as an incision in the
+    zero, not as a second stroke. It also keeps each counter half at
+    (2r - w)/2 = 56, still wider than the ring itself (32).
+
+    Why no overshoot: the bar terminals sit exactly on the circle's
+    horizontal tangent lines y = 128 -/+ R. At x = 120 the circle is at
+    y = 128 - sqrt(96^2 - 8^2) = 32.33, so the bar clears the crown by
+    0.33 units and the two forms fuse. Any overshoot beyond the tangent
+    would be a number the system cannot produce. The whole mark is
+    therefore exactly 192 x 192 = 24u x 24u.
+
+  TERMINALS
+    Cut flat on the x-axis. At 90 degrees "on axis" and "perpendicular to
+    the slash" coincide — the degenerate case of the family rule.
+
+  OPTICAL CENTERING
+    The form is mirror-symmetric about x = 128 and about y = 128, so the
+    ink centroid is the mathematical center. No offset applied. Uniform
+    ring thickness is a deliberate refusal of neo-grotesque modulation:
+    this is the geometric-grotesque member of the set.
+
+  16 x 16
+    outer 12px · ring 2px · counter 8px · bar 1px, leaving two 3px
+    D-shaped voids. Rasterised and inspected at 16, 32 and 64px: reads
+    unambiguously at all three. The most robust of the set, and the only
+    one that needs no dedicated icon master.
+
+  COLLISION RISK
+    Greek phi and the IEC power symbol both put a vertical stem through a
+    circle. Mitigated by w = t/2 (phi's stem is bowl-weight) and by zero
+    overshoot (the power symbol's stem breaks the crown). At 16px neither
+    reading surfaced in testing; at display sizes phi remains available to
+    anyone looking for it. Not eliminated, but the weakest risk of the set
+    and the only one that does not collide with a warning pictogram.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd" d="M 32 128 A 96 96 0 1 0 224 128 A 96 96 0 1 0 32 128 Z M 64 128 A 64 64 0 1 0 192 128 A 64 64 0 1 0 64 128 Z"/>
+  <path fill="currentColor" d="M 120 32 L 136 32 L 136 224 L 120 224 Z"/>
+</svg>

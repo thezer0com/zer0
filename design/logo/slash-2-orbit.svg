@@ -1,0 +1,14 @@
+<!--
+  zer0 / slash-2-orbit
+  Geometric bet: a true circle (r 86, monoline ring 26) instead of a typographic
+  oval, crossed by a thin 18-unit slash at a steep 68deg that overhangs 34 at each
+  end - the longest overhang of the set, so the cut reads as a separate gesture
+  passing through the ring rather than a detail inside it.
+  Slash is deliberately lighter than the ring (18 vs 26) and, passing through the
+  center of a circle, meets the ring at a true 90deg on both crossings.
+  Point-symmetric about (128,128): optical center is the canvas center.
+-->
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="zer0">
+  <path fill="currentColor" fill-rule="evenodd" d="M 42 128 A 86 86 0 1 0 214 128 A 86 86 0 1 0 42 128 Z M 68 128 A 60 60 0 1 0 188 128 A 60 60 0 1 0 68 128 Z"/>
+  <path fill="currentColor" d="M 181.30 20.11 L 164.61 13.37 L 74.70 235.89 L 91.39 242.63 Z"/>
+</svg>

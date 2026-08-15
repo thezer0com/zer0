@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zer0 logo — variant 3 "threefour"
+  Superellipse zero, 3:4 proportion, modulated ring, cut on the diagonal
+  of its own bounding rectangle.
+
+  MODULE
+    u = 256 / 32 = 8. Every number below is an integer multiple of u,
+    except one half-module (20 = 2.5u) which is 40/2, produced by the axis
+    of symmetry splitting an odd multiple.
+
+  WHY ARCS AND NOT A SQUIRCLE
+    A true superellipse |x/a|^n + |y/b|^n = 1 has no exact cubic Bezier.
+    Every squircle drawn as a path carries numerically fitted handle
+    ratios — arbitrary numbers wearing a geometric costume. This variant
+    uses circular-arc corners on a rectangle instead: same engineered
+    family (DIN, Eurostile, OCR), every coordinate exactly stated.
+
+  OUTER CONTOUR
+    half-width   A = 72             =  9u
+    half-height  B = 96             = 12u        A : B = 3 : 4
+    box          x in [56, 200], y in [32, 224]  = 144 x 192
+    corner rad   p_out = 48         =  6u        = B/2 = 2A/3
+
+    B = 96 is the family constant: all three variants share cap height
+    2B = 192. A follows from the 3:4 proportion, which is the narrowest
+    ratio that still reads as a zero rather than a stadium — and, see
+    below, the ratio that keeps the diagonal rational.
+
+    p_out = 48 is the single value that is simultaneously half the
+    vertical axis and two thirds the horizontal one. At p_out = A the
+    shape becomes a pill; at A/2 it becomes a rounded box. B/2 is the
+    only fraction both axes agree on.
+
+  RING (modulated, this is the optical correction of the set)
+    side thickness  ts = 32         =  4u
+    top thickness   tt = 24         =  3u        ts : tt = 4 : 3
+
+    Horizontal strokes read heavier than vertical strokes of equal
+    measure, so the sides are thickened. The ratio is 4:3, the inverse of
+    the frame's 3:4 — one number governs the proportion and the
+    modulation, so there is no second decision to defend.
+
+  INNER CONTOUR (derived, nothing chosen)
+    half-width   A - ts = 40        =  5u
+    half-height  B - tt = 72        =  9u
+    box          x in [88, 168], y in [56, 200]  = 80 x 144
+    corner rad   p_in = p_out - tt = 24  = 3u
+
+    Band thickness through the corner measures 30.2, between tt = 24 and
+    ts = 32, so the transition is monotone. A type designer would smooth
+    it further; a declared grid cannot, and says so.
+
+  CUT (parallelogram on the box diagonal)
+    centerline  (56, 224) -> (200, 32) — the bottom-left and top-right
+    corners of the outer bounding rectangle. Not a chosen angle: the
+    shape's own diagonal, 3 across for every 4 up, 53.13 degrees from the
+    horizontal.
+
+    horizontal width  W = 40        =  5u
+    perpendicular weight = W * 4/5 = 32 = ts, exactly.
+
+    This is the argument for 3:4 over 45 degrees. A 3-4-5 triangle keeps
+    both the horizontal width and the perpendicular weight integral;
+    45 degrees forces one of them irrational (see variant 2). The slash
+    takes ts rather than tt because at 53 degrees it is closer to vertical
+    than to horizontal, so it belongs to the stem family.
+
+  TERMINALS
+    Flat, cut on the x-axis, landing exactly on y = 32 and y = 224 — the
+    cap line and baseline of the zero. That is why the centerline runs the
+    full 2B: the terminals are placed by the shape, not by an overshoot
+    value. The tips clear the rounded corner by 20.17 units, computed:
+    the centerline exits the corner arc (center 152,80 radius 48) at
+    arclength 99.83 and ends at 120.
+
+  DIRECTION
+    Rises left to right, same rule as variant 2, same reason.
+
+  OPTICAL CENTERING
+    The ring is bi-symmetric; the parallelogram is point-symmetric about
+    (128, 128). Total ink box is x in [36, 220], y in [32, 224] — center
+    (128, 128) on both axes. No offset applied. The optical work in this
+    variant is the ts : tt modulation, not a translation.
+
+  16 x 16
+    12px tall, 9px wide · sides 2px · top 1.5px · slash 2px. The counter
+    resolves into two triangular voids about 2.5px at their widest,
+    pinching to 1.25px where the slash crosses the horizontal center.
+    Rasterised and inspected: the two voids do survive, but the arc
+    corners flatten completely and the mark reads as a slashed block
+    rather than a slashed zero. This is the tightest of the three and the
+    one that most needs a dedicated 16px master.
+
+    Three alternatives were drawn and rastered before settling here:
+    p_out = 32 (boxier, more counter), p_out = 40, and W = 32 (lighter
+    slash, perpendicular 25.6 = 0.8 ts). None bought measurable legibility
+    at 16px, and each cost either the 3-4-5 rationality or the corner
+    derivation. The tightness is inherent to the thesis — a narrow zero
+    crossed by a full-weight diagonal — not a fixable parameter.
+
+  COLLISION RISK
+    Lowest pictogram collision of the set: a narrow rectangle with a
+    non-45 slash does not read as the prohibition sign, and the engineered
+    corners push it away from Greek phi. Its risk is alphabetic instead —
+    at 64px this is unmistakably the Danish O, a letter, not a digit.
+    Whether that is a defect depends on whether the mark ever sits beside
+    text.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd" d="M 104 32 L 152 32 A 48 48 0 0 1 200 80 L 200 176 A 48 48 0 0 1 152 224 L 104 224 A 48 48 0 0 1 56 176 L 56 80 A 48 48 0 0 1 104 32 Z M 112 56 L 144 56 A 24 24 0 0 1 168 80 L 168 176 A 24 24 0 0 1 144 200 L 112 200 A 24 24 0 0 1 88 176 L 88 80 A 24 24 0 0 1 112 56 Z"/>
+  <path fill="currentColor" d="M 36 224 L 180 32 L 220 32 L 76 224 Z"/>
+</svg>

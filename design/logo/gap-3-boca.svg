@@ -1,0 +1,5 @@
+<!-- zer0 / gap-3-mouth: the gap does not cross the whole ring, only the upper-right wall. The zero stays one piece and its counter bleeds into the background. The gap is wide (24u) because it is the only cue: the reading comes from the open contour, not from a split into two halves. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M194.61 64.48A80 104 0 1 1 180.30 44.20L159.74 68.70A48 72 0 1 0 171.86 91.59L194.61 64.48Z"/>
+</svg>

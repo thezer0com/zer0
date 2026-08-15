@@ -1,0 +1,32 @@
+<!--
+  zer0 — the mark.
+
+  A zero cut on the diagonal, its two halves slipped along the cut like a
+  geological fault. The cut shows up in the outer silhouette before the inner
+  gap becomes visible, which is what keeps it readable once the mark gets too
+  small for the gap to survive.
+
+  Chosen from six proposals; it started life as gap-2-falha.svg.
+
+  Geometry: an elliptical ring, 80x104 outer and 48x72 inner, centred on
+  128,128, cut at 45 degrees. The gap is 16u and the halves slip 14u along it.
+
+  Known limit: at 32 rendered pixels and below, the cut degrades into a notch
+  and the mark reads as a plain O. Use zer0-small.svg there — it is a redraw,
+  not a scale. Measured, not guessed: at 32px the cut here survives only as a
+  disturbance in the antialiasing, which is the worse failure because it looks
+  deliberate. See ADR-0040.
+
+  What this file guarantees, and why each rule earns its place:
+
+  - No <text>: a logo that depends on an installed font is not a logo, it is a
+    suggestion. The zero is explicit geometry.
+  - No stroke, transform, mask or clipPath: anything that is not in the path
+    geometry disappears when this is converted to .icns, a favicon or a font.
+  - No width/height on <svg>: the size belongs to whoever draws it.
+  - fill="currentColor": so does the colour.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M73.98 190.33L96.84 167.48A48 72 0 0 0 176.03 88.29L200.33 63.98A80 104 0 0 1 73.98 190.33ZM55.67 186.02L79.97 161.71A48 72 0 0 1 159.16 82.52L182.02 59.67A80 104 0 0 0 55.67 186.02Z"/>
+</svg>

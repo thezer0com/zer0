@@ -1,0 +1,5 @@
+<!-- zer0 / gap-1-slit: the zero is cut by absence. A straight 18u band at 35 degrees is removed from the whole ring, leaving two identical halves, still aligned, separated by background. The middle of the width range: survives 16px without collapsing into two loose blobs. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <path fill="currentColor" fill-rule="evenodd"
+        d="M80.43 208.62L98.90 182.26A48 72 0 0 0 167.55 84.21L187.58 55.60A80 104 0 0 1 80.43 208.62ZM68.42 194.40L88.45 165.79A48 72 0 0 1 157.10 67.74L175.57 41.38A80 104 0 0 0 68.42 194.40Z"/>
+</svg>

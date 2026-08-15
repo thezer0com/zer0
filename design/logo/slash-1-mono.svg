@@ -1,0 +1,14 @@
+<!--
+  zer0 / slash-1-mono
+  The reference reading: a monospace-proportioned oval zero (140x196, ratio 0.71)
+  with a 60deg slash of 22 units cutting the counter and clearing the ring by ~26
+  at both ends. Stems (28) are thicker than the top/bottom arcs (22) so the ring
+  reads evenly weighted instead of heavy on the flanks.
+  Centering is optical by construction: ring and slash are point-symmetric about
+  (128,128), so the visual center sits on the canvas center even though the
+  bounding box is taller than it is wide.
+-->
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="zer0">
+  <path fill="currentColor" fill-rule="evenodd" d="M 58 128 A 70 98 0 1 0 198 128 A 70 98 0 1 0 58 128 Z M 86 128 A 42 76 0 1 0 170 128 A 42 76 0 1 0 86 128 Z"/>
+  <path fill="currentColor" d="M 194.53 34.77 L 175.47 23.77 L 61.47 221.23 L 80.53 232.23 Z"/>
+</svg>
