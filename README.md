@@ -122,15 +122,14 @@ browser cannot explain arrives unticked and is never granted quietly, and a
 refusal is recorded, so an extension that grows a permission later has to ask
 again.
 
-**An assistant — being built, and not usable yet.** Be clear about this one.
-Settings can already configure a provider (Anthropic, OpenAI, Gemini, or a local
-Ollama), keep the key in the Keychain, validate it, list its models, and
-register MCP connections. The core holds conversations scoped to a tab or a
-space, streams replies, and will not run any tool until somebody has approved
-that exact tool. What does not exist is the panel: nothing in the window draws a
-conversation, and the app installs a host that answers every request with "no
-provider configured". ⌘E and the command bar's Ask row create a conversation you
-cannot see. Do not install this expecting to talk to a model.
+**An assistant.** ⌘E — or the command bar's Ask row — opens a conversation
+about the page you are on: a tab at `zer0://chat`, anchored to that page,
+with the other threads one screen of the same page away. Bring your own key:
+Settings configures a provider (Anthropic, OpenAI, Gemini, or a local
+Ollama), keeps the key in the Keychain, validates it, lists its models, and
+registers MCP servers whose tools the model may call. Replies stream, and no
+tool runs until somebody has approved that exact tool
+([ADR-0050](docs/adr/0050-a-tool-runs-only-if-somebody-approved-that-exact-tool.md)).
 
 ---
 
@@ -139,7 +138,8 @@ cannot see. Do not install this expecting to talk to a model.
 **The mark is redrawn below 32 pixels, not scaled down.** At small sizes the cut
 in the zero closes under antialiasing and what is left is a plain O, so
 `zer0-small.svg` is a different drawing: the ring goes 32u → 44u, the gap and
-slip roughly double, and the mark is *shortened* — 80×104 to 72×94 — because the
+the gap goes 16u→22u and the slip 14u→20u — the same ~1.375 as the ring —
+and the mark is *shortened* — 80×104 to 72×94 — because the
 grid scales by its tallest dimension and height given up buys thickness
 everywhere else. The threshold is in rendered pixels, not points, so 16pt@2x
 gets the small drawing and 32pt@2x gets the canonical one. *"This is what type
@@ -285,32 +285,14 @@ ambiguous cases already resolved, each against the obvious reading.
 **There is no release.** Ad-hoc signing runs on the machine that built it, full
 stop. See [Build and run](#build-and-run).
 
-**The assistant is not connected.** Providers and MCP connections are
-configurable and the conversation engine is written and tested, but no panel
-draws a conversation and the app ships a host that refuses every request. See
-[What it does](#what-it-does).
-
 **Not every extension will work.** `WKWebExtension` implements a large part of
 the API surface, not all of it. Blockers and utilities should be fine; anything
 leaning on `chrome.debugger` or devtools APIs will not be.
-
-**Package signatures are not verified yet.** The CRX parser checks that a
-package's declared ID matches the ID derived from its signing key, which stops a
-swapped response from installing something else under the ID you asked for. The
-RSA and ECDSA signatures themselves are not checked. Until they are, the
-authenticity guarantee is HTTPS plus that ID check.
 
 **Fetching from the Chrome Web Store is not a supported use.** The update
 endpoint is not a documented public API and the store's terms do not grant
 third-party clients access to it. It is isolated behind a single function so
 that moving to another source is a new implementation, not a refactor.
-
-**The bundled SQLite is built for the installed SDK, not the deployment
-target.** The `cc` crate derives its own `-target` and ignores both
-`MACOSX_DEPLOYMENT_TARGET` and `CFLAGS`, so `sqlite3.o` claims a minimum macOS
-of whatever SDK is on the build machine and the linker says so. It runs fine
-where it was built. Before shipping to an older macOS than the build machine,
-this needs solving.
 
 **macOS is the only shell.** The core is engine-agnostic by construction and
 Linux is the intended second host, but that host does not exist yet.
