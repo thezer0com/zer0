@@ -83,20 +83,30 @@ jobs:
 
       - name: detect signing secrets
         id: signing
-        # Stable fails fast if either signing or notarisation is missing;
-        # a stable release that ships ad-hoc is not a release. The Sparkle
-        # key is still optional, because the appcast host is not live yet.
+        # Stable fails fast if any signing or notarisation material is
+        # missing; a stable release that ships ad-hoc is not a release.
+        # The runner keychain is empty, so the identity name alone signs
+        # nothing: the .p12 and its password have to arrive as secrets too,
+        # and notarisation takes the four App Store Connect credentials
+        # because no stored keychain profile survives an ephemeral runner.
+        # The Sparkle key is still optional, because the appcast host is
+        # not live yet.
         run: |
           si="${{ secrets.ZER0_SIGN_IDENTITY_STABLE }}"
-          no="${{ secrets.ZER0_NOTARY_PROFILE }}"
+          cert="${{ secrets.ZER0_SIGNING_CERT_P12_BASE64 }}"
+          certpw="${{ secrets.ZER0_SIGNING_CERT_PASSWORD }}"
+          aid="${{ secrets.ZER0_APPLE_ID }}"
+          kid="${{ secrets.ZER0_APPLE_KEY_ID }}"
+          kp8="${{ secrets.ZER0_NOTARY_KEY_P8_BASE64 }}"
+          tid="${{ secrets.ZER0_APPLE_TEAM_ID }}"
           sp="${{ secrets.ZER0_SPARKLE_PRIVATE_KEY }}"
-          if [[ -z "$si" ]]; then
-            echo "::error::ZER0_SIGN_IDENTITY_STABLE is not set." >&2
+          if [[ -z "$si" || -z "$cert" || -z "$certpw" ]]; then
+            echo "::error::Signing secrets incomplete: need ZER0_SIGN_IDENTITY_STABLE, ZER0_SIGNING_CERT_P12_BASE64 and ZER0_SIGNING_CERT_PASSWORD." >&2
             echo "::error::A stable release is signed by definition; refusing to build an unsigned one." >&2
             exit 1
           fi
-          if [[ -z "$no" ]]; then
-            echo "::error::ZER0_NOTARY_PROFILE is not set." >&2
+          if [[ -z "$aid" || -z "$kid" || -z "$kp8" || -z "$tid" ]]; then
+            echo "::error::Notarisation secrets incomplete: need ZER0_APPLE_ID, ZER0_APPLE_KEY_ID, ZER0_NOTARY_KEY_P8_BASE64 and ZER0_APPLE_TEAM_ID." >&2
             echo "::error::Gatekeeper refuses an unnotarised stable build on every Mac but this one." >&2
             exit 1
           fi
@@ -139,6 +149,26 @@ jobs:
           ZER0_SPARKLE_PUBLIC_KEY: ${{ secrets.ZER0_SPARKLE_PUBLIC_KEY }}
         run: ./scripts/build.sh release
 
+      - name: import signing certificate
+        # Runner keychains are empty; the identity arrives as a .p12 in a
+        # secret. Temporary keychain, cleaned in post — never touches the
+        # login keychain. No `if:` here: the detect step above already
+        # failed the job if the secrets are missing, and stable signs by
+        # definition.
+        env:
+          ZER0_CERT_BASE64: ${{ secrets.ZER0_SIGNING_CERT_P12_BASE64 }}
+          ZER0_CERT_PASSWORD: ${{ secrets.ZER0_SIGNING_CERT_PASSWORD }}
+        run: |
+          CERTFILE="$(mktemp -d)/cert.p12"
+          echo "$ZER0_CERT_BASE64" | base64 --decode > "$CERTFILE"
+          security create-keychain -p runner build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p runner build.keychain
+          security import "$CERTFILE" -k build.keychain -P "$ZER0_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k runner build.keychain
+          security list-keychain -d user -s build.keychain "$(security list-keychain -d user | tr -d '"')"
+          rm -rf "$(dirname "$CERTFILE")"
+
       - name: sign
         env:
           ZER0_CHANNEL: stable
@@ -146,10 +176,22 @@ jobs:
         run: ./scripts/sign.sh
 
       - name: notarize
+        # Keychain profiles do not survive an ephemeral runner, so CI takes
+        # the App Store Connect API key path. notarize.sh wants a file at
+        # ZER0_APPLE_KEY_PATH; the .p8 arrives as a secret and is decoded
+        # here, into a directory that dies with the step.
         env:
           ZER0_CHANNEL: stable
-          ZER0_NOTARY_PROFILE: ${{ secrets.ZER0_NOTARY_PROFILE }}
-        run: ./scripts/notarize.sh
+          ZER0_APPLE_ID: ${{ secrets.ZER0_APPLE_ID }}
+          ZER0_APPLE_KEY_ID: ${{ secrets.ZER0_APPLE_KEY_ID }}
+          ZER0_APPLE_TEAM_ID: ${{ secrets.ZER0_APPLE_TEAM_ID }}
+          ZER0_NOTARY_KEY_P8_BASE64: ${{ secrets.ZER0_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          KEYDIR="$(mktemp -d)"
+          echo "$ZER0_NOTARY_KEY_P8_BASE64" | base64 --decode > "$KEYDIR/AuthKey.p8"
+          export ZER0_APPLE_KEY_PATH="$KEYDIR/AuthKey.p8"
+          ./scripts/notarize.sh
+          rm -rf "$KEYDIR"
 
       - name: archive
         run: |
@@ -216,3 +258,11 @@ jobs:
             --archive "${{ steps.ver.outputs.archive }}" \
             --download-url "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.ver.outputs.archive }}" \
             --sparkle-private-key "$ZER0_SPARKLE_PRIVATE_KEY"
+
+      - name: clean up signing keychain
+        # Last and always: the temporary keychain holds a private key, and
+        # the runner being ephemeral is no reason to leave it lying around
+        # for the steps that did not need it. `|| true` because a job that
+        # failed before the import never created one.
+        if: always()
+        run: security delete-keychain build.keychain || true

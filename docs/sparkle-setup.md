@@ -21,30 +21,35 @@ rotated without a release that carries the new public key.
 
 ### Generate the pair
 
-Sparkle ships `sign_update` inside the release tarball. On a Mac with the
-same Sparkle version pinned in `apple/Package.swift`:
+Sparkle ships the key tools inside the release tarball, under `bin/`. On a
+Mac, with the tarball matching the version resolved in `apple/Package.resolved`:
 
 ```sh
-# 1. Download the Sparkle 2.x tarball that matches the version pinned in
-#    apple/Package.swift, extract it, and locate sign_update inside.
-curl -L https://github.com/sparkle-project/Sparkle/releases/download/2.7.3/Sparkle-2.7.3.tar.xz \
+# 1. Download and extract. The tarball lays `bin/` out at the ROOT of the
+#    extraction target, not under a Sparkle/ subdir.
+curl -L https://github.com/sparkle-project/Sparkle/releases/download/2.9.5/Sparkle-2.9.5.tar.xz \
   -o /tmp/Sparkle.tar.xz
 tar -xf /tmp/Sparkle.tar.xz -C /tmp
 
-# 2. Generate the pair. This prints a private key to stdout and the public
-#    key as the SUPublicEDKey value. The private key is a long base64 string;
-#    the public key is a shorter base64 string.
-/tmp/Sparkle/bin/sign_update -g
+# 2. Generate the pair. generate_keys stores the private key in the login
+#    keychain and prints only the PUBLIC key — the SUPublicEDKey value.
+/tmp/bin/generate_keys
+
+# 3. Export the private key to its master copy, outside the repo. This file
+#    is what the ZER0_SPARKLE_PRIVATE_KEY CI secret is seeded from.
+/tmp/bin/generate_keys -x ~/.config/zer0/sparkle/ed25519-private.key
+chmod 600 ~/.config/zer0/sparkle/ed25519-private.key
 ```
 
-`sign_update -g` writes the private key once and exits. There is no recovery
-path if it is lost — generate, store, and never print again.
+The private key has no recovery path. If it is lost, every appcast it signed
+becomes unverifiable and can never be re-signed; store the master copy, back
+it up, and never print it.
 
 ### Where each half lives
 
 | Half | Where | Who reads it |
 | --- | --- | --- |
-| **Private** | CI secret `ZER0_SPARKLE_PRIVATE_KEY` | The release workflow, to sign each appcast entry |
+| **Private** | master copy `~/.config/zer0/sparkle/ed25519-private.key` (mode 600, outside the repo), seeded into CI secret `ZER0_SPARKLE_PRIVATE_KEY` | The release workflow, to sign each appcast entry |
 | **Public** | `apple/scripts/bundle.sh` reads `ZER0_SPARKLE_PUBLIC_KEY` at build time and writes it into `Info.plist` as `SUPublicEDKey` | Sparkle, at runtime, to verify the appcast the app downloads |
 
 The public key is not a secret. Embedding it in `Info.plist` is the design:
@@ -114,7 +119,7 @@ signing key, and the host are the same.
 
 ```sh
 # After the workflow produces zer0-0.2.0.zip:
-/path/to/sign_update zer0-0.2.0.zip
+/path/to/sign_update --ed-key-file ~/.config/zer0/sparkle/ed25519-private.key zer0-0.2.0.zip
 # prints: sparkle:edSignature="..." length="12345678"
 ```
 
@@ -200,10 +205,12 @@ ZER0_SIGN_IDENTITY="Developer ID Application: ..." ./scripts/sign.sh
 # 2. Zip the signed .app.
 ditto -c -k --keepParent apple/.build/Zer0.app zer0-0.2.0.zip
 
-# 3. Sign the enclosure. ZER0_SPARKLE_PRIVATE_KEY is the CI secret; the
-#    export makes sign_update read it without writing it to disk.
-export ZER0_SPARKLE_PRIVATE_KEY
-ENCLOSURE=$(/path/to/sign_update zer0-0.2.0.zip)
+# 3. Sign the enclosure. ZER0_SPARKLE_PRIVATE_KEY is the CI secret; `-f -`
+#    makes sign_update read it from stdin, which keeps it off the runner's
+#    filesystem. (An exported env var does NOT work: with no -f, sign_update
+#    reads the keychain, which CI does not have.)
+ENCLOSURE="$(printf '%s\n' "$ZER0_SPARKLE_PRIVATE_KEY" \
+  | /path/to/sign_update -f - zer0-0.2.0.zip)"
 
 # 4. Patch the channel's appcast with the new <item> and upload it to the
 #    static host. The public key embedded in the bundle is already there,

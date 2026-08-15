@@ -6,12 +6,14 @@ name: canary
 # bundle id is `com.thezer0.canary` (resolve-bundle.sh), the profile
 # directory is `Zer0 Canary/`, and the appcast is `appcast-canary.xml`.
 #
-# Signing is conditional on a secret being present. Today the project
+# Signing is conditional on secrets being present. Today the project
 # signs ad-hoc (ADR-0109, ADR-0108); when a Developer ID Application
-# identity exists, `ZER0_SIGN_IDENTITY_CANARY` carries it and the
-# sign.sh step turns on. The same gate guards notarisation and the
-# Sparkle appcast publish -- none of them can run without the secret
-# that precedes them.
+# identity exists, `ZER0_SIGN_IDENTITY_CANARY` plus the .p12/password
+# pair that imports it turn the sign.sh step on. The same gates guard
+# notarisation (four App Store Connect credentials -- an ephemeral
+# runner has no stored keychain profile) and the Sparkle appcast
+# publish -- none of them can run without the secrets that precede
+# them.
 #
 # The WebKit engine is not built here. It is restored from the cache
 # written by build-webkit.yml, keyed on the tag in
@@ -129,17 +131,42 @@ jobs:
       # value off the log and gives the downstream steps one boolean.
       - name: detect signing secrets
         id: signing
-        # Three booleans, one per gate. Each line reads exactly one secret;
-        # the value never lands in the log. The shape is the standard way
-        # to gate a step on a secret being present, because `if:` cannot
-        # read secrets directly.
+        # Three booleans, one per gate. Signing needs the identity name
+        # AND the .p12 + password that import it (an ephemeral runner has
+        # no keychain); notarisation needs all four App Store Connect
+        # credentials. A partial set is a skip, not a half-run, and the
+        # value never lands in the log -- only the boolean does.
         run: |
           si="${{ secrets.ZER0_SIGN_IDENTITY_CANARY }}"
-          no="${{ secrets.ZER0_NOTARY_PROFILE }}"
+          cert="${{ secrets.ZER0_SIGNING_CERT_P12_BASE64 }}"
+          certpw="${{ secrets.ZER0_SIGNING_CERT_PASSWORD }}"
+          aid="${{ secrets.ZER0_APPLE_ID }}"
+          kid="${{ secrets.ZER0_APPLE_KEY_ID }}"
+          kp8="${{ secrets.ZER0_NOTARY_KEY_P8_BASE64 }}"
+          tid="${{ secrets.ZER0_APPLE_TEAM_ID }}"
           sp="${{ secrets.ZER0_SPARKLE_PRIVATE_KEY }}"
-          [[ -n "$si" ]] && echo "sign=true"      >> "$GITHUB_OUTPUT" || echo "sign=false"      >> "$GITHUB_OUTPUT"
-          [[ -n "$no" ]] && echo "notarize=true"  >> "$GITHUB_OUTPUT" || echo "notarize=false"  >> "$GITHUB_OUTPUT"
+          [[ -n "$si" && -n "$cert" && -n "$certpw" ]] && echo "sign=true"      >> "$GITHUB_OUTPUT" || echo "sign=false"      >> "$GITHUB_OUTPUT"
+          [[ -n "$aid" && -n "$kid" && -n "$kp8" && -n "$tid" ]] && echo "notarize=true"  >> "$GITHUB_OUTPUT" || echo "notarize=false"  >> "$GITHUB_OUTPUT"
           [[ -n "$sp" ]] && echo "sparkle=true"   >> "$GITHUB_OUTPUT" || echo "sparkle=false"   >> "$GITHUB_OUTPUT"
+
+      - name: import signing certificate
+        # Runner keychains are empty; the identity arrives as a .p12 in a
+        # secret. Temporary keychain, cleaned in post — never touches the
+        # login keychain.
+        if: steps.signing.outputs.sign == 'true'
+        env:
+          ZER0_CERT_BASE64: ${{ secrets.ZER0_SIGNING_CERT_P12_BASE64 }}
+          ZER0_CERT_PASSWORD: ${{ secrets.ZER0_SIGNING_CERT_PASSWORD }}
+        run: |
+          CERTFILE="$(mktemp -d)/cert.p12"
+          echo "$ZER0_CERT_BASE64" | base64 --decode > "$CERTFILE"
+          security create-keychain -p runner build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p runner build.keychain
+          security import "$CERTFILE" -k build.keychain -P "$ZER0_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k runner build.keychain
+          security list-keychain -d user -s build.keychain "$(security list-keychain -d user | tr -d '"')"
+          rm -rf "$(dirname "$CERTFILE")"
 
       - name: sign
         if: steps.signing.outputs.sign == 'true'
@@ -149,11 +176,23 @@ jobs:
         run: ./scripts/sign.sh
 
       - name: notarize
+        # Keychain profiles do not survive an ephemeral runner, so CI takes
+        # the App Store Connect API key path. notarize.sh wants a file at
+        # ZER0_APPLE_KEY_PATH; the .p8 arrives as a secret and is decoded
+        # here, into a directory that dies with the step.
         if: steps.signing.outputs.notarize == 'true'
         env:
           ZER0_CHANNEL: canary
-          ZER0_NOTARY_PROFILE: ${{ secrets.ZER0_NOTARY_PROFILE }}
-        run: ./scripts/notarize.sh
+          ZER0_APPLE_ID: ${{ secrets.ZER0_APPLE_ID }}
+          ZER0_APPLE_KEY_ID: ${{ secrets.ZER0_APPLE_KEY_ID }}
+          ZER0_APPLE_TEAM_ID: ${{ secrets.ZER0_APPLE_TEAM_ID }}
+          ZER0_NOTARY_KEY_P8_BASE64: ${{ secrets.ZER0_NOTARY_KEY_P8_BASE64 }}
+        run: |
+          KEYDIR="$(mktemp -d)"
+          echo "$ZER0_NOTARY_KEY_P8_BASE64" | base64 --decode > "$KEYDIR/AuthKey.p8"
+          export ZER0_APPLE_KEY_PATH="$KEYDIR/AuthKey.p8"
+          ./scripts/notarize.sh
+          rm -rf "$KEYDIR"
 
       - name: archive
         run: |
@@ -228,3 +267,11 @@ jobs:
             --archive "${{ steps.ver.outputs.archive }}" \
             --download-url "https://github.com/${{ github.repository }}/releases/download/canary-${{ steps.ver.outputs.version }}/${{ steps.ver.outputs.archive }}" \
             --sparkle-private-key "$ZER0_SPARKLE_PRIVATE_KEY"
+
+      - name: clean up signing keychain
+        # Last and always: the temporary keychain holds a private key, and
+        # the runner being ephemeral is no reason to leave it lying around
+        # for the steps that did not need it. `|| true` because a job that
+        # skipped the import (ad-hoc canary) never created one.
+        if: always()
+        run: security delete-keychain build.keychain || true

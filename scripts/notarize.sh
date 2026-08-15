@@ -8,23 +8,23 @@
 # credentials, neither of which sign.sh touches. sign.sh runs on a dev machine
 # with nothing but a keychain; this script does not.
 #
-# Two ways in (Apple recommends the first):
+# Two ways in (Apple recommends the keychain profile for humans; CI cannot
+# use it, because an ephemeral runner has no keychain the profile was stored
+# in):
 #
-#   1. Keychain profile, stored once via `xcrun notarytool store-credentials`:
-#
-#        ZER0_NOTARY_PROFILE=zer0-ci ./scripts/notarize.sh
-#
-#      This is the shape CI takes. The profile name is the only secret that
-#      has to live in the runner's environment; the .p8 key, key id and team
-#      id are sealed inside the keychain.
-#
-#   2. App Store Connect API key, passed in directly:
+#   1. App Store Connect API key, passed in directly -- the shape CI takes.
+#      The .p8 is decoded from a secret to a file because --key wants a path:
 #
 #        ZER0_APPLE_ID=... \
 #        ZER0_APPLE_KEY_ID=... \
 #        ZER0_APPLE_KEY_PATH=/path/AuthKey.p8 \
 #        ZER0_APPLE_TEAM_ID=... \
 #        ./scripts/notarize.sh
+#
+#   2. Keychain profile, stored once via `xcrun notarytool store-credentials`
+#      -- the local/dev machine shape:
+#
+#        ZER0_NOTARY_PROFILE=zer0-ci ./scripts/notarize.sh
 #
 # Prerequisites either way:
 #   - App Store Connect API key with App Manager role (or Developer + the

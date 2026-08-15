@@ -75,5 +75,3 @@ xcuserdata/
 .playwright-mcp/
 *.profraw
 *.log
-
-scripts/commit-history.sh

@@ -147,11 +147,12 @@ fi
 # sign_update: find it, or fetch the Sparkle tarball that ships it.
 # --------------------------------------------------------------------------- #
 # Sparkle's sign_update is the only thing that produces an EdDSA signature the
-# appcast will verify against SUPublicEDKey. The version fetched here matches
-# the one the workflow used to fetch inline and the one apple/Package.swift
-# resolves (`from: "2.7.0"`); keeping them in lockstep is what makes the
-# signature and the verifier agree (ADR-0109 signing-key rotation note).
-SPARKLE_VERSION="2.7.3"
+# appcast will verify against SUPublicEDKey. The version fetched here must
+# match the one apple/Package.resolved links (EdDSA is interoperable across
+# 2.x, but the declared lockstep rule is kept on purpose); keeping them in
+# lockstep is what makes the signature and the verifier agree (ADR-0109
+# signing-key rotation note).
+SPARKLE_VERSION="2.9.5"
 SPARKLE_TARBALL="https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
 
 SIGN_UPDATE="$(command -v sign_update || true)"
