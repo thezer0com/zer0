@@ -322,7 +322,12 @@ pub fn safe_filename(suggested: &str) -> String {
         .trim_start_matches('.')
         .trim_end_matches(|c: char| c == '.' || c.is_whitespace());
 
-    if trimmed.is_empty() {
+    // A device name cannot be repaired by replacing a character — every
+    // character in "CON" is legal, the stem as a whole is the problem — so it
+    // takes the same refusal as a name that came out empty. Checked on the
+    // trimmed name because Windows matches the reservation ignoring trailing
+    // dots and spaces too: "CON." must not survive by losing its dot here.
+    if trimmed.is_empty() || is_windows_device_name(trimmed) {
         return FALLBACK_FILENAME.to_string();
     }
     cap_length(trimmed)
@@ -332,8 +337,10 @@ pub fn safe_filename(suggested: &str) -> String {
 fn is_forbidden(c: char) -> bool {
     // `:` is not a path separator on APFS, but Finder still renders it as `/`,
     // so a name containing one reads as a folder to the person looking at it.
+    // `* ? " < > |` are refused outright by NTFS: the core is hosted on
+    // Windows too, and a name that cannot be written there is not a name.
     c.is_control()
-        || matches!(c, '/' | '\\' | ':')
+        || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
         // Bidirectional overrides let a name read as "invoice.pdf" on screen
         // while ending in .app on disk. Nothing legitimate needs one in a
         // filename, and the only reason to send one is to be misread.
@@ -341,6 +348,26 @@ fn is_forbidden(c: char) -> bool {
             '\u{200e}' | '\u{200f}'
             | '\u{202a}'..='\u{202e}'
             | '\u{2066}'..='\u{2069}')
+}
+
+/// On NTFS these are not file names. `CON.txt` resolves to the console device,
+/// `LPT1.pdf` to a printer port — the reservation travels with the extension.
+const WINDOWS_DEVICE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Whether `name`'s stem is a Windows device name.
+///
+/// The stem is the text before the *first* dot — not the extension split
+/// [`split_extension`] makes at the last one — because Windows matches the
+/// reservation that way: `CON.tar.gz` is the console device, while
+/// `report.CON` is an ordinary file. ASCII case only, as the reserved set
+/// itself is ASCII.
+fn is_windows_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or_default();
+    let stem = stem.to_ascii_uppercase();
+    WINDOWS_DEVICE_NAMES.contains(&stem.as_str())
 }
 
 /// Split a name into stem and extension, extension included with its dot.

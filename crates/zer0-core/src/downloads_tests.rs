@@ -111,6 +111,48 @@ fn control_characters_and_separators_are_replaced_not_dropped() {
 }
 
 #[test]
+fn windows_forbidden_characters_are_replaced_not_dropped() {
+    // Same rule as the control characters above: dropping them would collapse
+    // distinct suggestions onto one name. NTFS refuses these outright, so they
+    // cannot cross onto a Windows filesystem as they are.
+    assert_eq!(safe_filename("what?.pdf"), "what-.pdf");
+    assert_eq!(safe_filename("a<b>*c.pdf"), "a-b--c.pdf");
+    assert_eq!(safe_filename("\"quoted\".txt"), "-quoted-.txt");
+    assert_eq!(safe_filename("star|craft.zip"), "star-craft.zip");
+}
+
+#[test]
+fn a_windows_device_name_is_refused_whatever_its_case_or_extension() {
+    // On NTFS these are not file names: "CON.txt" resolves to the console
+    // device, and the reservation is matched on the stem before the first
+    // dot, so "CON.tar.gz" is caught too. No character can be blamed — the
+    // stem as a whole is reserved — so the fallback applies, as with a name
+    // that came out empty.
+    assert_eq!(safe_filename("CON"), FALLBACK_FILENAME);
+    assert_eq!(safe_filename("con"), FALLBACK_FILENAME);
+    assert_eq!(safe_filename("Con.txt"), FALLBACK_FILENAME);
+    assert_eq!(safe_filename("nul.tar.gz"), FALLBACK_FILENAME);
+    assert_eq!(safe_filename("lpt3"), FALLBACK_FILENAME);
+
+    // Near misses that are ordinary names on every filesystem.
+    assert_eq!(safe_filename("contact.txt"), "contact.txt");
+    assert_eq!(safe_filename("com10.txt"), "com10.txt");
+    assert_eq!(safe_filename("report.CON"), "report.CON");
+    assert_eq!(safe_filename("console.log"), "console.log");
+}
+
+#[test]
+fn a_name_that_only_becomes_a_device_name_after_sanitising_is_refused() {
+    // Windows matches the reservation ignoring trailing dots and spaces, and
+    // the trim inside safe_filename removes exactly those. The check has to
+    // run on the trimmed name, or "CON." would become the console device the
+    // moment its dot was stripped.
+    assert_eq!(safe_filename("CON."), FALLBACK_FILENAME);
+    assert_eq!(safe_filename(" .con "), FALLBACK_FILENAME);
+    assert_eq!(safe_filename(".NUL"), FALLBACK_FILENAME);
+}
+
+#[test]
 fn an_absurdly_long_name_is_cut_but_keeps_its_extension() {
     let long = format!("{}.pdf", "x".repeat(4000));
 

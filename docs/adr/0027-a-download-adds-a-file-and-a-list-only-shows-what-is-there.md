@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-03-30
-- **Lock:** `crates/zer0-core/src/downloads_tests.rs::a_suggested_name_cannot_climb_out_of_the_download_folder`, `crates/zer0-core/src/downloads_tests.rs::an_existing_file_is_never_written_over`, `crates/zer0-core/src/download_reducer_tests.rs::an_entry_whose_file_is_gone_is_not_brought_back`, `crates/zer0-core/src/download_reducer_tests.rs::a_download_still_running_comes_back_as_interrupted_not_as_running`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/indeterminateStatusClaimsNothing`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/noTotalGetsTheSpinnerAndNotABar`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/aStoppedDownloadDrawsNothing`
+- **Lock:** `crates/zer0-core/src/downloads_tests.rs::a_suggested_name_cannot_climb_out_of_the_download_folder`, `crates/zer0-core/src/downloads_tests.rs::an_existing_file_is_never_written_over`, `crates/zer0-core/src/downloads_tests.rs::windows_forbidden_characters_are_replaced_not_dropped`, `crates/zer0-core/src/downloads_tests.rs::a_windows_device_name_is_refused_whatever_its_case_or_extension`, `crates/zer0-core/src/downloads_tests.rs::a_name_that_only_becomes_a_device_name_after_sanitising_is_refused`, `crates/zer0-core/src/download_reducer_tests.rs::an_entry_whose_file_is_gone_is_not_brought_back`, `crates/zer0-core/src/download_reducer_tests.rs::a_download_still_running_comes_back_as_interrupted_not_as_running`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/indeterminateStatusClaimsNothing`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/noTotalGetsTheSpinnerAndNotABar`, `apple/Tests/Zer0ShellTests/DownloadTests.swift::DownloadHonestyTests/aStoppedDownloadDrawsNothing`
 
 ## Context
 
@@ -46,11 +46,15 @@ the core because naming is behaviour, not appearance:
 
 - **`safe_filename`** reduces the suggestion to a name that can only land inside
   the chosen directory. It takes the last component after splitting on `/` **and**
-  `\`, replaces control characters, `:` and Unicode bidirectional overrides with
-  `-`, strips leading dots, caps the length at 240 bytes on a character boundary
-  while keeping the extension, and falls back to `download` when nothing usable
-  is left. It deliberately does **not** percent-decode: decoding is exactly what
-  puts `%2F` back to being a separator after the separators have been removed.
+  `\`, replaces control characters, `:`, Unicode bidirectional overrides and the
+  characters Windows refuses in a filename (`* ? " < > |`) with `-`, strips leading
+  dots, caps the length at 240 bytes on a character boundary while keeping the
+  extension, and falls back to `download` when nothing usable is left or when the
+  stem before the first dot is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`,
+  `COM1`–`COM9`, `LPT1`–`LPT9`, matched without regard to case and extension — on
+  NTFS `CON.tar.gz` is the console device, not a file). It deliberately does
+  **not** percent-decode: decoding is exactly what puts `%2F` back to being a
+  separator after the separators have been removed.
 - **`destination_in`** never returns a path that is occupied. The second copy of
   `report.pdf` is `report-2.pdf`, which is what Safari does on the same machine,
   and after 999 attempts it returns `None` and the download is refused rather
@@ -176,6 +180,10 @@ paranoia in isolation, and each is one line to delete:
 - **"Nobody puts a bidi override in a filename."** They do, and the whole
   purpose is that the name reads as `invoice.pdf` on screen and is not that on
   disk. This regression is invisible by construction.
+- **"Why refuse `CON`? It is a perfectly good name on APFS."** It is, and on
+  NTFS it is not a name at all — it is the console device, and what the person
+  expected to be their file becomes a write to a device or an error. The core
+  is hosted on Windows too, so the reservation travels with the name.
 - **"Let it overwrite, the person picked the name."** They did not; the server
   did. This is the one that turns a download into a way to replace a file the
   person already had.
