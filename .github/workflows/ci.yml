@@ -36,7 +36,7 @@ jobs:
   # inside `check.sh` exists so the Linux half of CI can run the gate at all.
   record:
     name: decision record
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       # No credentials left on disk: nothing in this job talks to git, and a
@@ -50,7 +50,7 @@ jobs:
 
   macos:
     name: core + apple shell
-    runs-on: macos-15
+    runs-on: blacksmith-6vcpu-macos-15
     # The default is 360 minutes. The Swift suite puts ~571 mostly-@MainActor
     # tests through a single lane, and this runner has 3 cores against the
     # author's 14 — a test measured at 0.6s alone has been seen taking 116.9s
@@ -141,7 +141,7 @@ jobs:
   # `check.sh` uses `--all-features` and would hide it.
   linux-core:
     name: core only
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
