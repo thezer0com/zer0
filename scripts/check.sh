@@ -50,6 +50,12 @@ done
 echo "==> scratch paths"
 ./scripts/scratch-check.sh
 
+# Also cheap, also before the compilers: SF Symbols are Apple-only and the
+# shell is going multi-platform (ADR-0116). The budget keeps the count moving
+# down as components migrate to the licensed set, instead of quietly up.
+echo "==> sf symbol budget"
+./scripts/sf-symbol-budget.sh
+
 echo "==> cargo fmt"
 cargo fmt --all --check
 
