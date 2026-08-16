@@ -24,9 +24,13 @@ private func onlyTab(_ model: BrowserModel) throws -> TabId {
 
 @MainActor
 private func newHost(_ model: BrowserModel) -> StoreInstallHost {
+    // The model is what installs (and declares its runtime at its own door);
+    // this core only answers where the store lives, so no runtime is the
+    // honest declaration for it.
     StoreInstallHost(model: model, hosts: Zer0.inMemory(
         firstSpaceName: "Personal",
-        dataStoreId: UUID().uuidString
+        dataStoreId: UUID().uuidString,
+        capabilities: HostCapabilities(extensionRuntime: false)
     ).extensionStoreHosts())
 }
 
@@ -42,7 +46,11 @@ private func newHost(_ model: BrowserModel) -> StoreInstallHost {
 struct StoreInstallHostRuleTests {
     /// Runs the guard the script actually carries, in a real JavaScript engine.
     private func guardAccepts(_ host: String) throws -> Bool {
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false)
+        )
         let context = try #require(JSContext())
         let source = StoreInstallScript.hostGuard(core.extensionStoreHosts())
         let function = try #require(context.evaluateScript(source))
@@ -53,7 +61,11 @@ struct StoreInstallHostRuleTests {
 
     /// What the installer would say about the same host.
     private func coreAccepts(_ host: String) -> Bool {
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false)
+        )
         return core.extensionIdForUrl(url: "https://\(host)/detail/name/\(listingId)") != nil
     }
 
@@ -105,7 +117,11 @@ struct StoreInstallHostRuleTests {
 
     @Test("the script itself refuses to run over plain http")
     func theScriptRefusesPlainHttp() throws {
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false)
+        )
         let source = StoreInstallScript.source(hosts: core.extensionStoreHosts())
         // The guard is the first statement and it tests the scheme as well as
         // the host, because over http the host is whatever the network says.
@@ -207,7 +223,11 @@ struct StoreInstallButtonStateTests {
         // recognise, which means a new outcome with no label silently offers to
         // install something already installed. Enumerating the cases is what
         // makes that impossible to add quietly.
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false)
+        )
         let source = StoreInstallScript.source(hosts: core.extensionStoreHosts())
 
         for outcome in StoreInstallHost.Outcome.allCases where outcome != .offer {

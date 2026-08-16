@@ -113,6 +113,32 @@ impl WindowRequest {
     }
 }
 
+/// What the host can actually do, declared once when the core is opened.
+///
+/// The core has no other way to know. `install_extension` on a host with no
+/// extension runtime unpacks a package, draws a row, and runs nothing — a
+/// success-shaped silence, the reporting class ADR-0086 names one boundary
+/// down. Declared at the constructor rather than through a setter because a
+/// host that forgets to answer should fail to compile, not discover the gap
+/// one defect at a time.
+///
+/// The record grows only when a field gains behaviour that consumes it. A
+/// field nobody reads is a switch that changes nothing — the drift ADR-0103
+/// names for `ZER0_PROVIDES`, wearing a struct — so a capability arrives with
+/// the code that asks about it or not at all.
+///
+/// `Default` is deliberately not derived: `..Default::default()` would let a
+/// new field arrive already answered, and the whole point of this type is that
+/// every host says every field out loud.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct HostCapabilities {
+    /// Whether this host can load and run extensions at all. The one field,
+    /// because [`crate::ffi::Zer0::install_extension`] is the one consumer
+    /// today; a second field arrives with the behaviour that asks about it.
+    pub extension_runtime: bool,
+}
+
 /// Why a reply stopped, as the provider host read it.
 ///
 /// The distinction the core acts on is `ToolCalls` versus the rest; `MaxTokens`
@@ -696,6 +722,24 @@ pub enum Action {
     /// the back list and not the tab (ADR-0024).
     NavigationStateRefused {
         tab: TabId,
+    },
+    /// Whether this tab can go back and forward, as the engine answers it now.
+    ///
+    /// Reported by the host whenever the back/forward list moves: on a commit,
+    /// on a same-document navigation that grows it, and after a restored view
+    /// is handed its history. The flags land on the tab and travel in every
+    /// snapshot, because whether ⌘[ does anything is behaviour and belongs
+    /// here rather than in a question each platform's shell puts to its own
+    /// engine (ADR-0002).
+    ///
+    /// Distinct from [`Action::NavigationStateChanged`] on purpose: the blob
+    /// is a settled archive worth storing, the flags are this run's answer and
+    /// worth nothing across a restart, and they do not even change on the same
+    /// schedule — a `history.pushState` moves the list without a commit.
+    NavigationStackChanged {
+        tab: TabId,
+        can_go_back: bool,
+        can_go_forward: bool,
     },
     TitleChanged {
         tab: TabId,

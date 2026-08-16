@@ -86,6 +86,9 @@ mod store;
 #[cfg(test)]
 mod test_support;
 mod tint;
+mod ua;
+#[cfg(feature = "ffi")]
+mod ua_ffi;
 mod url_input;
 
 pub use blocking::{
@@ -218,6 +221,7 @@ pub use tint::{
     DeclaredColor, MAX_DECLARED_COLORS, MAX_LUMINANCE_FOR_LIGHT_INK, MIN_INK_CONTRAST,
     MIN_LUMINANCE_FOR_DARK_INK, PageTint, tint_for,
 };
+pub use ua::{CHROME_MARKETPLACE_TOKEN, UserAgentContext, user_agent};
 pub use url_input::{Resolved, resolve as resolve_input};
 
 #[cfg(feature = "ffi")]

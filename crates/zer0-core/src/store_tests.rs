@@ -494,6 +494,52 @@ fn popup_blocking_ships_on_and_survives_being_turned_off() {
 }
 
 #[test]
+fn background_tabs_throttle_out_of_the_box_and_survive_being_let_loose() {
+    // Both halves, for the same reason as the autoplay row above: a field the
+    // store writes but never reads back is correct until the day something
+    // changes it, and then it forgets on relaunch. No row in Settings changes
+    // this yet — a host or a future switch will, and storage is not allowed
+    // to be the half that is broken when that happens (ADR-0120).
+    let default = Preferences::default();
+    assert!(
+        default.background_throttling,
+        "a browser whose background tabs are frozen rather than slowed is a broken default"
+    );
+
+    let mut before = populated();
+    before.preferences.background_throttling = false;
+
+    let after = round_trip(&before);
+
+    assert!(
+        !after.preferences.background_throttling,
+        "letting background tabs run free did not survive a relaunch"
+    );
+}
+
+#[test]
+fn https_first_ships_on_and_survives_being_turned_off() {
+    // Same pair of failures, same reason: the upgrade policy is the core's to
+    // give and the store's to keep, and a value written but never read back
+    // would read as browser state while being launch-time weather (ADR-0120).
+    let default = Preferences::default();
+    assert!(
+        default.https_first,
+        "a browser that navigates a typed http address over plain http is a broken default"
+    );
+
+    let mut before = populated();
+    before.preferences.https_first = false;
+
+    let after = round_trip(&before);
+
+    assert!(
+        !after.preferences.https_first,
+        "turning the https upgrade off did not survive a relaunch"
+    );
+}
+
+#[test]
 fn a_denied_extension_permission_stays_denied_across_a_relaunch() {
     // The whole point of writing consent down. If a refusal evaporated on
     // quit, the next launch would treat it as never asked and grant it back —

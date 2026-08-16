@@ -100,6 +100,16 @@ pub struct Preferences {
     /// with no effect on either position, which is why ADR-0074 refused it a
     /// row and ADR-0075 gives it one.
     pub block_unprompted_windows: bool,
+    /// A tab that is not the front one keeps running, slower. Browser
+    /// behaviour rather than engine configuration: what a background tab is
+    /// allowed to do is the same question on every host, so a future shell
+    /// reads this answer rather than re-deciding it (ADR-0120).
+    pub background_throttling: bool,
+    /// A typed `http://` address is tried as https first, and falls back to
+    /// http rather than failing. Navigation policy, not rendering — no host
+    /// could reasonably disagree about it, so the core owns the answer and the
+    /// shell applies it without deciding (ADR-0120).
+    pub https_first: bool,
 }
 
 impl Default for Preferences {
@@ -125,6 +135,16 @@ impl Default for Preferences {
             // page allowed to open a window unprompted is one people learn to
             // distrust within a day (ADR-0075).
             block_unprompted_windows: true,
+            // On. A browser that freezes every tab it is not looking at is
+            // one whose chat and music tabs are dead until clicked; one that
+            // lets them run free burns battery for nothing. Slower-but-alive
+            // is the product answer, and it is the core's to give (ADR-0120).
+            background_throttling: true,
+            // On, with the silent fallback as part of the semantics: the
+            // mediated shape puts engine chrome over a failure ADR-0016 says
+            // gets our whole screen. Why the silent spelling is the right
+            // one is recorded beside the WebKit call it refuses (ADR-0120).
+            https_first: true,
         }
     }
 }

@@ -57,6 +57,15 @@ struct PageProcessTests {
         }
     }
 
+    /// The core's copy of the engine's back answer, read the way the UI reads
+    /// it: off the snapshot, never off the engine. A test reading
+    /// `WKWebView.canGoBack` directly would prove the engine's own
+    /// bookkeeping and say nothing about what the browser's state says ⌘[
+    /// should do.
+    private func canGoBack(_ model: BrowserModel, tab: TabId) -> Bool {
+        model.snapshot.tabs.first { $0.id == tab }?.canGoBack == true
+    }
+
     @Test("a crashed page becomes a screen that says so and keeps its address")
     func aDeadPageIsAState() async throws {
         let m = BrowserModel(storagePath: nil)
@@ -119,12 +128,12 @@ struct PageProcessTests {
         #expect(await navigate(m, tab: tab, to: try page("one")))
         let second = try page("two")
         #expect(await navigate(m, tab: tab, to: second))
-        #expect(m.engine.canGoBack(tab))
+        #expect(canGoBack(m, tab: tab))
 
         try await crashPage(of: m, tab: tab)
 
         #expect(
-            m.engine.canGoBack(tab),
+            canGoBack(m, tab: tab),
             "the back list lives in the UI process and has no business dying with the page"
         )
     }
@@ -148,6 +157,15 @@ struct NavigationStateTests {
         }
     }
 
+    /// The core's copy of the engine's back answer, read the way the UI reads
+    /// it: off the snapshot, never off the engine. A test reading
+    /// `WKWebView.canGoBack` directly would prove the engine's own
+    /// bookkeeping and say nothing about what the browser's state says ⌘[
+    /// should do.
+    private func canGoBack(_ model: BrowserModel, tab: TabId) -> Bool {
+        model.snapshot.tabs.first { $0.id == tab }?.canGoBack == true
+    }
+
     /// The whole of it, end to end: browse three pages, quit, come back, and
     /// press Back.
     @Test("a restored tab can still go back to where it had been")
@@ -166,17 +184,17 @@ struct NavigationStateTests {
             let tab = try #require(before.snapshot.activeTab)
             #expect(await navigate(before, tab: tab, to: first))
             #expect(await navigate(before, tab: tab, to: second))
-            #expect(before.engine.canGoBack(tab))
+            #expect(canGoBack(before, tab: tab))
             // The state is reported off the navigation, so give the second one
             // a moment to have been carried into the core before the save.
-            #expect(await eventually { before.engine.canGoBack(tab) })
+            #expect(await eventually { canGoBack(before, tab: tab) })
             before.save()
         }
 
         let after = BrowserModel(storagePath: path)
         let tab = try #require(after.snapshot.tabs.first?.id)
         #expect(
-            await eventually { after.engine.canGoBack(tab) },
+            await eventually { canGoBack(after, tab: tab) },
             "a tab that comes back with an empty back list has lost everything you did to reach it"
         )
 
@@ -227,7 +245,7 @@ struct NavigationStateTests {
             },
             "a corrupt state must cost the back list, not the tab"
         )
-        #expect(m.engine.canGoBack(tab) == false)
+        #expect(canGoBack(m, tab: tab) == false)
     }
 
     @Test("a tab handed its history is not also told to load")

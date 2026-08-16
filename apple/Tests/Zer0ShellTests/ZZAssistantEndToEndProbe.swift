@@ -205,7 +205,11 @@ private final class AssistantProbeBrowser {
     private(set) var deltas: [String] = []
 
     init() {
-        core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false)
+        )
     }
 
     func wire(chat: ChatHost) {

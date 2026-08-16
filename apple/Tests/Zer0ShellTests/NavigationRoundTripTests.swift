@@ -68,6 +68,160 @@ struct NavigationRoundTripTests {
         #expect(webView.configuration.websiteDataStore != WKWebsiteDataStore.default())
         #expect(webView.configuration.websiteDataStore.isPersistent)
     }
+
+    /// Whether a tab can go back and forward is the core's state, written by
+    /// the engine's report and read off the snapshot. The shell never puts the
+    /// question to its own engine — that is the shape each platform would
+    /// answer its own way, and ⌘[ cannot mean different things on two of them
+    /// (ADR-0002).
+    @Test("back and forward availability reaches the core as state")
+    func backForwardAvailabilityReachesTheCore() async throws {
+        let m = model()
+        let tab = try #require(m.snapshot.activeTab)
+        let first = try makePage(title: "one")
+        let second = try makePage(title: "two")
+
+        func flags() -> (back: Bool, forward: Bool) {
+            let t = m.snapshot.tabs.first { $0.id == tab }
+            return (t?.canGoBack ?? false, t?.canGoForward ?? false)
+        }
+
+        #expect(flags() == (false, false), "no engine has spoken for a fresh tab")
+
+        m.send(.navigateTo(tab: tab, input: first.absoluteString))
+        #expect(await eventually { flags() == (false, false) && m.activeTab?.loadingComplete == true })
+        // One page in the list: nothing behind it, and the core has to agree
+        // with the engine about that or Back is a key that acts on nothing.
+
+        m.send(.navigateTo(tab: tab, input: second.absoluteString))
+        #expect(
+            await eventually { flags() == (true, false) },
+            "two pages deep and the core still says there is nothing behind: every reader that trusts it acts blind"
+        )
+
+        m.send(.goBack(tab: tab))
+        #expect(
+            await eventually { flags() == (false, true) },
+            "going back has to reach the core, or the second ⌘[ acts on stale state"
+        )
+    }
+}
+
+/// The engine's back/forward answer, and what it costs the core to hear it.
+///
+/// Every report is a full dispatch and refresh, so the count is the contract:
+/// a navigation that settles a new pair reports it exactly once, and an
+/// observation that repeats the last pair reports nothing at all. Measured
+/// 2026-08-16, the doubled reports were the largest per-navigation addition
+/// in the tree, and they are what this suite exists to keep removed.
+@MainActor
+struct NavigationStackReportTests {
+    private func model() -> BrowserModel {
+        BrowserModel(storagePath: nil)
+    }
+
+    private func makePage(title: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zer0-stack-\(UUID().uuidString)")
+            .appendingPathExtension("html")
+        try "<html><head><title>\(title)</title></head><body>hi</body></html>"
+            .write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    /// The reports that reached the core's door, counted on the way in. The
+    /// original door is chained behind the counter, so counting is the only
+    /// thing that changed. A struct rather than a tuple because the count is
+    /// the assertion, and tuples cannot be compared as a list.
+    private struct Report: Equatable {
+        let back: Bool
+        let forward: Bool
+    }
+
+    @MainActor
+    private final class StackCounter {
+        var reports: [Report] = []
+    }
+
+    private func countStackReports(on m: BrowserModel) -> StackCounter {
+        let counter = StackCounter()
+        let onward = m.engine.emit
+        m.engine.emit = { action in
+            if case let .navigationStackChanged(_, back, forward) = action {
+                counter.reports.append(Report(back: back, forward: forward))
+            }
+            onward?(action)
+        }
+        return counter
+    }
+
+    /// The core's copy of the engine's answer, read the way the UI reads it.
+    private func flags(_ m: BrowserModel, tab: TabId) -> (back: Bool, forward: Bool) {
+        let t = m.snapshot.tabs.first { $0.id == tab }
+        return (t?.canGoBack ?? false, t?.canGoForward ?? false)
+    }
+
+    @Test("a Back that flips both flags reaches the core as one report")
+    func backFlippingBothFlagsReportsOnce() async throws {
+        let m = model()
+        let tab = try #require(m.snapshot.activeTab)
+        let first = try makePage(title: "one")
+        let second = try makePage(title: "two")
+
+        m.send(.navigateTo(tab: tab, input: first.absoluteString))
+        #expect(await eventually { m.activeTab?.loadingComplete == true })
+        m.send(.navigateTo(tab: tab, input: second.absoluteString))
+        #expect(await eventually { flags(m, tab: tab) == (true, false) })
+
+        let counter = countStackReports(on: m)
+        m.send(.goBack(tab: tab))
+        #expect(
+            await eventually { flags(m, tab: tab) == (false, true) },
+            "the Back never settled"
+        )
+        // The settled pair is only in the snapshot because the last report
+        // landed, so the count is final the moment the wait ends.
+        #expect(
+            counter.reports == [Report(back: false, forward: true)],
+            "expected exactly one report carrying the settled pair, found \(counter.reports)"
+        )
+    }
+
+    /// The other half of the contract, at the door itself: KVO delivers for
+    /// a flag that did not move, and that fire must cost nothing. Driven by
+    /// calling the door directly because WebKit offers no way to make it
+    /// re-fire on demand — the navigation above proves the real fires land;
+    /// this one proves the repeated pair is refused.
+    @Test("an observation that repeats the last pair reports nothing")
+    func refiredObservationReportsNothing() {
+        let counter = StackCounter()
+        let host = HostedWebView(
+            tab: TabId(1),
+            webView: PageView(frame: .zero, configuration: WKWebViewConfiguration()),
+            adoptDownload: { _, _ in },
+            permissions: SitePermissionLedger(),
+            dialogs: PageDialogLedger(),
+            authChallenges: AuthChallengeLedger(),
+            openWindow: { _, _, _ in nil }
+        ) { action in
+            if case let .navigationStackChanged(_, back, forward) = action {
+                counter.reports.append(Report(back: back, forward: forward))
+            }
+        }
+
+        // A view that has never navigated reads (false, false), the way a
+        // fresh tab does, and the first report of a pair must arrive.
+        host.reportNavigationStack()
+        #expect(counter.reports == [Report(back: false, forward: false)], "the first report must arrive")
+
+        // The re-fire: KVO delivering again for values that did not move.
+        host.reportNavigationStack()
+        host.reportNavigationStack()
+        #expect(
+            counter.reports == [Report(back: false, forward: false)],
+            "a repeated pair costs a dispatch to change nothing"
+        )
+    }
 }
 
 /// Space profiles: the half of isolation the cookie jar does not cover.
@@ -267,26 +421,36 @@ struct UserAgentTests {
 
     @Test("the Safari signature tracks the installed copy, not a frozen string")
     func signatureIsDerivedFromTheSystem() async throws {
-        let signature = HostedWebView.safariSignature
+        // Read off the composed token rather than a `safariSignature`
+        // constant: composition moved to the core (ADR-0119) and the shell
+        // now holds only the input. What this still proves is the thing it
+        // always did — that the version the installed Safari reports arrives
+        // in the string the browser announces, and not a literal frozen at
+        // build time.
+        let token = HostedWebView.safariUserAgentToken
 
-        #expect(signature.hasPrefix("Version/"))
-        #expect(signature.hasSuffix("Safari/605.1.15"))
+        #expect(token.hasPrefix("Version/"))
+        #expect(token.contains("Safari/605.1.15"))
 
         if let installed = Bundle(path: "/Applications/Safari.app")?
             .infoDictionary?["CFBundleShortVersionString"] as? String
         {
-            #expect(signature.contains(installed), "should follow the installed Safari")
+            #expect(token.contains(installed), "should follow the installed Safari")
         }
     }
 
     @Test("our own token carries a version")
     func browserTokenHasAVersion() async throws {
-        let token = HostedWebView.browserToken
+        // The `zer0/x.y.z` token is the last space-separated word of the UA
+        // the core composes; there is no separate `browserToken` constant to
+        // read since ADR-0119 moved composition out of the shell.
+        let ours = HostedWebView.safariUserAgentToken
+            .split(separator: " ").last.map(String.init) ?? ""
 
-        #expect(token.hasPrefix("zer0/"))
-        let version = token.dropFirst("zer0/".count)
+        #expect(ours.hasPrefix("zer0/"))
+        let version = ours.dropFirst("zer0/".count)
         #expect(!version.isEmpty)
-        #expect(version.first?.isNumber == true, "expected a version number: \(token)")
+        #expect(version.first?.isNumber == true, "expected a version number: \(ours)")
     }
 
     @Test("a space's own user agent still wins")

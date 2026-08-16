@@ -174,10 +174,12 @@ enum Design {
         /// rendered pixels, below which the diagonal cut survives only as a
         /// disturbance in the antialiasing.
         static let mark: CGFloat = 72
-        /// An SF Symbol that is the whole of a control's label, in a strip
-        /// sized for the window's own controls rather than for a line of
-        /// prose. There is no text beside it to match, so it is sized to the
-        /// strip it sits in.
+        /// A glyph that is the whole of a control's label, in a strip sized
+        /// for the window's own controls rather than for a line of prose.
+        /// There is no text beside it to match, so it is sized to the strip
+        /// it sits in. Worn by both symbol systems while the migration runs
+        /// (ADR-0116): the sidebar toggle in SF Symbols, the find bar's
+        /// buttons in the licensed set.
         static let control: CGFloat = 13
     }
 

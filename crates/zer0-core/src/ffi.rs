@@ -29,7 +29,7 @@ use crate::model::{NavigationError, Space, SpaceId, Tab, TabId, Window, WindowId
 use crate::native_messaging::{self, NativeHostDecision, NativeHostOutcome};
 use crate::page_dialogs::PageDialog;
 use crate::preferences::{self, Preferences, SearchEngine};
-use crate::protocol::{Action, EngineCommand};
+use crate::protocol::{Action, EngineCommand, HostCapabilities};
 use crate::reducer;
 use crate::routing::Route;
 use crate::session::Session;
@@ -260,6 +260,12 @@ pub(crate) struct State {
     // `pub(crate)` alongside `lock()` for the same reason: a second FFI surface
     // in another file needs the same session, not a second one.
     pub(crate) session: Session,
+    /// What the host declared it can do, set once at the door and consulted
+    /// before anything that needs a capability the host may not have. The
+    /// shape rather than a checklist of `if`s scattered at call sites: one
+    /// place holds the declaration, and a capability without a consumer here
+    /// is a field nobody reads (ADR-0118).
+    capabilities: HostCapabilities,
     /// Behind the trait rather than named as a concrete store: which backend
     /// holds the session is a decision taken once, in `open`, and nothing
     /// downstream of it gets to depend on the answer. `None` is a browser that
@@ -366,11 +372,21 @@ impl State {
 #[uniffi::export]
 impl Zer0 {
     /// Start without touching the disk. Everything is lost on quit.
+    ///
+    /// `capabilities` is the host's declaration, not a preference: whatever it
+    /// leaves out is refused fail-closed by the calls that need it, so a host
+    /// that says nothing gets a browser that answers "cannot" — with the
+    /// reason — rather than one that half-works.
     #[uniffi::constructor]
-    pub fn in_memory(first_space_name: String, data_store_id: String) -> Arc<Self> {
+    pub fn in_memory(
+        first_space_name: String,
+        data_store_id: String,
+        capabilities: HostCapabilities,
+    ) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(State {
                 session: Session::new(first_space_name, data_store_id),
+                capabilities,
                 store: None,
                 icons: None,
                 extensions_dir: scratch_extensions_dir(),
@@ -392,7 +408,12 @@ impl Zer0 {
     /// and no warning. So the store is detached instead: the browser runs, and
     /// refuses to write anything on top of a file it could not understand.
     #[uniffi::constructor]
-    pub fn open(db_path: String, first_space_name: String, data_store_id: String) -> Arc<Self> {
+    pub fn open(
+        db_path: String,
+        first_space_name: String,
+        data_store_id: String,
+        capabilities: HostCapabilities,
+    ) -> Arc<Self> {
         // The one place in the browser that names a backend. Everything after
         // this line talks to whatever it opened through `SessionStore`.
         let store = Store::open(&db_path).ok();
@@ -448,6 +469,7 @@ impl Zer0 {
         Arc::new(Self {
             state: Mutex::new(State {
                 session,
+                capabilities,
                 store,
                 icons,
                 extensions_dir: ext::default_extension_directory(&profile_dir),
@@ -1059,11 +1081,28 @@ impl Zer0 {
     }
 
     /// Unpack a downloaded package and make it ready to load.
+    ///
+    /// Refused before anything touches the disk when this host declared no
+    /// extension runtime. An install that unpacks and never runs is
+    /// success-shaped silence — the row appears, the button does nothing — so
+    /// the gate comes first and the sentence is the core's one vocabulary for
+    /// *cannot*: the build, then the reason (ADR-0103, ADR-0118).
     pub fn install_extension(&self, package: Vec<u8>) -> Result<InstalledExtension, Zer0Error> {
-        let (dir, locale) = {
+        let (capabilities, dir, locale) = {
             let state = self.lock();
-            (state.extensions_dir.clone(), state.ui_locale.clone())
+            (
+                state.capabilities,
+                state.extensions_dir.clone(),
+                state.ui_locale.clone(),
+            )
         };
+        if !capabilities.extension_runtime {
+            return Err(Zer0Error::Extension {
+                message:
+                    "this build of zer0 cannot run extensions — the host declared no extension runtime"
+                        .into(),
+            });
+        }
         std::fs::create_dir_all(&dir).map_err(|e| Zer0Error::Extension {
             message: e.to_string(),
         })?;

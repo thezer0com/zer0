@@ -89,10 +89,16 @@ fn a_real_session() -> Session {
 }
 
 fn open_at(path: &Path) -> Arc<Zer0> {
+    // These tests never install anything, so they say so: a host with no
+    // extension runtime is the honest default, and the state every shell that
+    // forgot to answer would be in if the declaration were optional.
     Zer0::open(
         path.to_str().unwrap().to_string(),
         "Personal".into(),
         "ds-fresh".into(),
+        HostCapabilities {
+            extension_runtime: false,
+        },
     )
 }
 
@@ -457,5 +463,86 @@ fn a_conversation_comes_back_called_what_it_was_called() {
     assert!(
         !names.iter().any(|n| n == "Chat"),
         "a restored conversation is still called the word Chat: {names:?}"
+    );
+}
+
+// MARK: - The host's declaration is enforced at the install door
+
+/// A genuinely valid package, built through the same `test_support` the ext
+/// module's own tests use, so the gate is proven with bytes the parser accepts
+/// rather than bytes that were never going to get that far — a refusal that
+/// only works on garbage packages proves the error path, not the gate.
+fn a_signed_package() -> Vec<u8> {
+    use std::io::Write as _;
+
+    let manifest = br#"{"manifest_version": 3, "name": "Capability Gate", "version": "1.0"}"#;
+    let mut archive = Vec::new();
+    {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut archive));
+        writer
+            .start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(manifest).unwrap();
+        writer.finish().unwrap();
+    }
+    crate::ext::crx::test_support::crx_signed_by(
+        &[&crate::ext::crx::test_support::TestSigner::from_seed(
+            b"ffi-capability-gate",
+        )],
+        None,
+        &archive,
+    )
+}
+
+/// The declaration, not the package, is what the refusal is about: the same
+/// bytes that install on a host with a runtime are refused on one without,
+/// before anything touches the disk, and the sentence says *cannot* and names
+/// the reason (ADR-0117 on top of ADR-0103's vocabulary).
+#[test]
+fn a_host_that_declared_no_extension_runtime_is_refused_installation() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds".into(),
+        HostCapabilities {
+            extension_runtime: false,
+        },
+    );
+
+    let refusal = zer0.install_extension(a_signed_package()).unwrap_err();
+
+    let sentence = refusal.to_string();
+    assert!(
+        sentence.contains("cannot run extensions"),
+        "the refusal must say cannot: {sentence}"
+    );
+    assert!(
+        sentence.contains("declared no extension runtime"),
+        "a cannot without its reason is a shrug, not an answer: {sentence}"
+    );
+    assert!(
+        zer0.installed_extensions().is_empty(),
+        "a refused install must leave nothing behind to draw a row from"
+    );
+}
+
+/// The other half of the gate: a host that declared the runtime installs the
+/// same package. Without this, a gate that refused everything would pass the
+/// test above and the declaration would be a lock with no door.
+#[test]
+fn a_host_that_declared_an_extension_runtime_installs() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds".into(),
+        HostCapabilities {
+            extension_runtime: true,
+        },
+    );
+
+    let installed = zer0.install_extension(a_signed_package()).unwrap();
+
+    assert_eq!(installed.manifest.name, "Capability Gate");
+    assert!(
+        !zer0.installed_extensions().is_empty(),
+        "the row the installer draws from has to exist after a real install"
     );
 }

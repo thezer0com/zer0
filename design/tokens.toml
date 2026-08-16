@@ -1,0 +1,186 @@
+# zer0's design tokens, as data.
+#
+# The structured source of truth for every number and hex the design system
+# names. DESIGN.md keeps the WHY — the criterion each token earns its place
+# by; this file is the WHAT, stated once and machine-readable, so that the
+# shells (macOS today, iOS/Android/Linux/Windows to come) consume one
+# artifact instead of re-transcribing prose tables by hand (ADR-0117).
+#
+# How a token changes: edit it here AND in the Swift consumer
+# (apple/Sources/Zer0Shell/DesignSystem.swift, Palette.swift,
+# PaletteProposals.swift) in the same PR. scripts/token-check.sh runs at the
+# gate and compares both sides value by value, in both directions — a value
+# changed on one side only, or a token added or removed on one side only, is
+# a red build naming the token. There is no way to change one side quietly.
+#
+# Keys are the Swift token names, spelled identically, so the checker maps by
+# name rather than by position and a renamed token fails loudly instead of
+# silently pairing with its neighbour.
+#
+# [type].pt is different in kind: the point size macOS resolves for each
+# semantic text style at the default text size, measured rather than decreed
+# (NSFont.preferredFont, macOS 27.0 build 26A5406e, 2026-08-16). The Swift
+# side names a style and the platform supplies the size, so there is no
+# number there to compare against — these are platform-resolved data for the
+# other shells to map onto their own type scales, and the checker leaves them
+# alone on purpose.
+
+[spacing]
+hair = 4
+tight = 8
+snug = 12
+regular = 16
+loose = 24
+section = 32
+# The one value deliberately off the 4pt rhythm (DESIGN.md §2): the gap
+# between the two lines of a single label.
+line = 2
+
+[stroke]
+hairline = 1
+insertion = 2
+
+[radius]
+small = 6
+medium = 10
+large = 16
+
+[glyph]
+icon = 34
+mark = 72
+control = 13
+
+[durations]
+quick = 0.18
+linger = 5.0
+
+[motion.spring]
+# The `entrance` curve. `subtle` is easeOut(quick) — derived, not duplicated.
+response = 0.34
+damping = 0.82
+
+[elevation.resting]
+opacity = 0.18
+radius = 12
+y = 4
+
+[elevation.floating]
+opacity = 0.22
+radius = 18
+y = 8
+
+[elevation.overlay]
+opacity = 0.28
+radius = 30
+y = 12
+
+[pane]
+emptyStateMinHeight = 220
+
+# Type tokens. `style` is the semantic text style the Swift side builds on;
+# `weight` is the modifier it carries ("regular" = none); `pt` is what macOS
+# resolves today, per the header. Fixed sizes follow: the hero line the
+# text-style scale does not have, and the two an NSTextField demands.
+[type.row]
+style = "subheadline"
+weight = "regular"
+pt = 11
+
+[type.label]
+style = "caption"
+weight = "regular"
+pt = 10
+
+[type.micro]
+style = "caption2"
+weight = "regular"
+pt = 10
+
+[type.sectionTitle]
+style = "caption"
+weight = "semibold"
+# Arrives with .sectionHeading(): uppercase closes letters up, and the
+# tracking is what keeps the word legible at caption size.
+tracking = 0.6
+pt = 10
+
+[type.commandInput]
+style = "title3"
+weight = "regular"
+pt = 15
+
+[type.detail]
+style = "callout"
+weight = "regular"
+pt = 12
+
+[type.rowTitle]
+style = "body"
+weight = "medium"
+pt = 13
+
+[type.emptyTitle]
+style = "title2"
+weight = "semibold"
+pt = 17
+
+[type.display]
+style = "largeTitle"
+weight = "bold"
+pt = 26
+
+[type.mono]
+style = "caption2"
+design = "monospaced"
+weight = "regular"
+pt = 10
+
+[type.greetingSize]
+# Serif, via .greetingType() — @ScaledMetric(relativeTo: .largeTitle), so it
+# still follows the system text size (DESIGN.md §2, ADR-0090).
+pt = 40
+
+[type.field]
+command = 20
+strip = 13
+
+# B · Fault (ADR-0043). `light` and `dark` are the two appearances of one
+# palette; every token draws in sRGB. accentHover/accentPressed and onAccent
+# are palette data even though DESIGN.md §7's table elides them.
+[palette.light]
+background = "#FAFAFC"
+chrome = "#F0F0F6"
+recessed = "#ECECF3"
+recessedInner = "#E2E2EC"
+rule = "#D7D7E0"
+ink = "#121327"
+inkSecondary = "#53556B"
+inkTertiary = "#83859A"
+accent = "#3B2FE0"
+accentHover = "#4F45EC"
+accentPressed = "#2C22B4"
+onAccent = "#FFFFFF"
+selectedRow = "#837AE0"
+companionRow = "#C6C0F2"
+warning = "#8F5600"
+danger = "#B92019"
+success = "#1C7549"
+
+[palette.dark]
+background = "#0E0F17"
+chrome = "#181925"
+recessed = "#1A1B27"
+recessedInner = "#222432"
+rule = "#33354A"
+ink = "#ECEDF5"
+inkSecondary = "#9EA1B5"
+inkTertiary = "#6E7186"
+accent = "#8E86FF"
+accentHover = "#A49DFF"
+accentPressed = "#7A70F2"
+onAccent = "#101033"
+selectedRow = "#635BC9"
+companionRow = "#4A448F"
+warning = "#E5A94D"
+danger = "#F0726A"
+success = "#63C08D"

@@ -1128,6 +1128,21 @@ fn apply(session: &mut Session, action: Action) -> Vec<EngineCommand> {
             load_command(tab, url).into_iter().collect()
         }
 
+        // The engine's answer, recorded rather than re-asked. A report for a
+        // tab that has gone is dropped with it: the answer described a view
+        // nobody holds any more.
+        Action::NavigationStackChanged {
+            tab,
+            can_go_back,
+            can_go_forward,
+        } => {
+            if let Some(t) = session.browser.tab_mut(tab) {
+                t.can_go_back = can_go_back;
+                t.can_go_forward = can_go_forward;
+            }
+            Vec::new()
+        }
+
         Action::TitleChanged { tab, title } => {
             let Some(t) = session.browser.tab_mut(tab) else {
                 return Vec::new();

@@ -40,6 +40,16 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
     private let adoptDownload: @MainActor (WKDownload, TabId) -> Void
     private var observations: [NSKeyValueObservation] = []
     private var isMuted = false
+    /// The last back/forward pair this view has reported to the core.
+    ///
+    /// KVO re-fires for a flag that did not move — measured 2026-08-16,
+    /// counting what one navigation dispatches: both observers deliver for
+    /// one navigation, the changed flag and the unchanged one alike — and
+    /// every report costs a full core dispatch and refresh. One pair per
+    /// view rather than one flag per view, because the two flags are one
+    /// answer: whichever observer fires first reads both, so a navigation
+    /// lands as one report and the other fire finds nothing left to say.
+    var lastReportedStack: (canGoBack: Bool, canGoForward: Bool)?
 
     /// The ordinary way in: this host builds the configuration and the view.
     ///
@@ -167,6 +177,24 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
                     self.emit(.navigationFinished(tab: self.tab))
                 }
             },
+            // The engine's back/forward answer, watched rather than asked for.
+            // One observation per flag and both flags in every report, so a
+            // Back that flips the pair still lands as one settled answer
+            // whoever fires first. Emitted through `reportNavigationStack`
+            // rather than inline, because the restored-history path below says
+            // the same thing from a place KVO does not reach — and a fire
+            // that would repeat the last reported pair is dropped there, so
+            // a navigation's two fires cost one dispatch.
+            webView.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    self?.reportNavigationStack()
+                }
+            },
+            webView.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    self?.reportNavigationStack()
+                }
+            },
         ]
     }
 
@@ -177,51 +205,49 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
     /// Safari signature, which is what a sniffer looks for, and then say who
     /// we actually are.
     ///
-    /// Order matters: `zer0/` goes **after** `Safari/`, the way Edge appends
-    /// `Edg/` and Vivaldi appends `Vivaldi/`. Putting it first, or in place of
-    /// the Safari token, is what breaks the sniffing this exists to satisfy.
+    /// Composed by the core (ADR-0119): the order, the fallbacks and the fixed
+    /// `Safari/605.1.15` suffix are behaviour two platforms could not disagree
+    /// about, so this host supplies the local facts and applies the answer.
+    /// Order still matters as much as ADR-0008 says it does — `zer0/` goes
+    /// **after** `Safari/`, the way Edge appends `Edg/` — it is just no longer
+    /// this file's to get wrong.
+    static let safariUserAgentToken: String = userAgent(
+        safariVersion: installedSafariVersion,
+        ownVersion: appVersion,
+        context: .browsing
+    )
+
+    /// The installed Safari's version, or `nil` where no Safari can be read.
     ///
-    /// The Safari version is read from the installed copy, so it ages with the
-    /// system instead of freezing at whatever was current when this shipped.
-    static let safariUserAgentToken: String = {
-        "\(safariSignature) \(browserToken)"
-    }()
+    /// The one local input to the Safari signature: read from the installed
+    /// copy so it ages with the system instead of freezing at whatever was
+    /// current when this shipped. Everything the signature wraps around it —
+    /// the `Version/` prefix, the fixed `Safari/605.1.15` suffix, the `"18.3"`
+    /// fallback — is the core's to spell (ADR-0119).
+    static let installedSafariVersion: String? = Bundle(path: "/Applications/Safari.app")?
+        .infoDictionary?["CFBundleShortVersionString"] as? String
 
-    /// `Version/x Safari/605.1.15`, borrowed so sites recognise the engine.
-    static let safariSignature: String = {
-        // A recent-enough Safari for anything that checks a minimum version.
-        let fallback = "18.3"
-        let version = Bundle(path: "/Applications/Safari.app")?
-            .infoDictionary?["CFBundleShortVersionString"] as? String
-
-        return "Version/\(version ?? fallback) Safari/605.1.15"
-    }()
-
-    /// `zer0/x.y.z`. Us, saying so.
-    static let browserToken: String = {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        return "zer0/\(version ?? "0.1.0")"
-    }()
-
-    /// Chrome's product token, used by extension contexts (ADR-0106). Sites
-    /// that sniff for `Chrome/` to gate features see Chrome here and take the
-    /// path that calls `connectNative` / `chrome.runtime.connect`, which is the
-    /// path ADR-0105 implements and the path Chrome-marketplace extensions
-    /// expect. The version is a recent stable rather than read from a bundle:
-    /// there is no Chrome on this machine to read, and the shape — `<major>.0.0.0`
-    /// — is what matters to sniffers, not the build number. Same shape ADR-0008
-    /// uses for its `"18.3"` Safari fallback.
-    static let chromeMarketplaceToken: String = "Chrome/138.0.0.0"
+    /// This app's own version, or `nil` where the bundle names none.
+    ///
+    /// The other local input: the bundle in front of the core is the shell's,
+    /// and a Linux host will read its own. The `zer0/` spelling and its
+    /// fallback are the core's.
+    static let appVersion: String? = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 
     /// The UA extension contexts announce (ADR-0106). Carries Chrome's token
     /// alongside Safari's so Chrome-marketplace extensions that gate on UA take
     /// the Chromium path; Safari's signature stays so extensions that *also*
     /// recognise Safari see both, the way Edge and Brave spell their UA. zer0's
     /// own token stays last for the same reason it does on pages (ADR-0008).
-    static let chromeCompatibleUserAgentToken: String = {
-        "\(safariSignature) \(chromeMarketplaceToken) \(browserToken)"
-        // "Version/18.3 Safari/605.1.15 Chrome/138.0.0.0 zer0/0.1.0"
-    }()
+    ///
+    /// Composed by the same core function the browsing UA comes from, one
+    /// context apart (ADR-0119) — the split is one argument, not a second
+    /// string this host could drift on.
+    static let chromeCompatibleUserAgentToken: String = userAgent(
+        safariVersion: installedSafariVersion,
+        ownVersion: appVersion,
+        context: .webExtension
+    )
 
     /// An ephemeral space gets a store that never touches disk. A persistent
     /// one gets its own identified store, which is what keeps two spaces from
@@ -772,14 +798,26 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
 final class EngineHost {
     private var hosted: [TabId: HostedWebView] = [:]
 
-    /// The one view the engine has built and nobody owns yet.
+    /// The views the engine has built and nobody owns yet, oldest first.
     ///
     /// It exists for the length of a single synchronous dispatch and no longer:
-    /// `adopt` puts it here, sends the action, and the `AdoptWebView` the
+    /// `adopt` puts one here, sends the action, and the `AdoptWebView` the
     /// reducer answers with picks it up on the way back through `perform`. A
     /// field rather than a parameter because the core is between the two halves
     /// and the core does not carry `WKWebViewConfiguration`s.
-    private var pendingPopup: PendingPopup?
+    ///
+    /// A queue rather than one slot, because the delegate must answer
+    /// synchronously and nothing on our side of the FFI controls whether
+    /// WebKit ever asks for a second view while the first is still being
+    /// adopted. Measured on this SDK it does not — each `createWebViewWith`
+    /// runs to completion before the next arrives — but that is an engine's
+    /// behaviour, not a promise, and the cost of relying on it was answering a
+    /// second approved `window.open` with `nil`, which is the page's spelling
+    /// of a pop-up blocker nobody configured. Order is the pairing: actions
+    /// and their commands cross the core one dispatch at a time, so the oldest
+    /// pending configuration is always the one the oldest `AdoptWebView` is
+    /// for.
+    private var pendingPopups: [PendingPopup] = []
 
     /// A `WKWebViewConfiguration` the engine handed over, and the view built
     /// from it once the core has said what tab it is.
@@ -822,19 +860,17 @@ final class EngineHost {
         openedBy opener: TabId,
         request: WindowRequest
     ) -> WKWebView? {
-        // One at a time. Two pages being adopted at once would mean two
-        // configurations and one slot, and the second `AdoptWebView` could not
-        // tell which it was for — so the second is refused rather than given
-        // the first one's view, which is the failure that looks like a working
-        // browser until somebody signs in as the wrong person.
-        guard pendingPopup == nil else { return nil }
-
         let pending = PendingPopup(
             configuration: configuration,
             userAgent: hosted[opener]?.webView.customUserAgent
         )
-        pendingPopup = pending
-        defer { pendingPopup = nil }
+        pendingPopups.append(pending)
+        // Ours alone to take back: the core may answer this open with no
+        // `AdoptWebView` at all — the opener's tab is gone — and a pending
+        // nobody claims would otherwise sit at the front of the queue and be
+        // handed to the next adoption, which is somebody signing in as the
+        // wrong person.
+        defer { pendingPopups.removeAll { $0 === pending } }
 
         // Synchronous all the way down: this reaches `BrowserModel.send`, which
         // dispatches into the core and performs what comes back before it
@@ -1102,17 +1138,28 @@ final class EngineHost {
             // back/forward list, and it says so on the next line — so the
             // refusal is reported rather than guessed at, and the core decides
             // what a tab with no history is owed.
-            if let navigationState, !created.restore(navigationState: navigationState) {
-                emit?(.navigationStateRefused(tab: tab))
+            if let navigationState {
+                if created.restore(navigationState: navigationState) {
+                    // The list is whole the moment the engine takes the
+                    // archive, and the core should not wait for the commit
+                    // that loads the page on top of it to learn that Back
+                    // works here — a relaunch would otherwise open with every
+                    // tab answering "nothing behind me" until each page
+                    // finishes loading.
+                    created.reportNavigationStack()
+                } else {
+                    emit?(.navigationStateRefused(tab: tab))
+                }
             }
 
         case let .adoptWebView(tab):
             // Only ever in answer to `adopt` above, which is the only thing
-            // that fills this. Nothing to fall back on if it is empty: a view
-            // built here from a configuration of our own would satisfy the
-            // command and break the opener relationship silently, which is
-            // exactly the repair that guesses (AGENTS.md).
-            guard let pending = pendingPopup else { return }
+            // that fills this, and the oldest one first — the order actions
+            // and commands crossed the core in. Nothing to fall back on if it
+            // is empty: a view built here from a configuration of our own
+            // would satisfy the command and break the opener relationship
+            // silently, which is exactly the repair that guesses (AGENTS.md).
+            guard let pending = pendingPopups.popFirst() else { return }
 
             let view = PageView(frame: .zero, configuration: pending.configuration)
             if let agent = pending.userAgent, !agent.isEmpty {
@@ -1278,14 +1325,15 @@ final class EngineHost {
             break
         }
     }
+}
 
-    func canGoBack(_ tab: TabId?) -> Bool {
-        guard let tab else { return false }
-        return hosted[tab]?.webView.canGoBack ?? false
-    }
-
-    func canGoForward(_ tab: TabId?) -> Bool {
-        guard let tab else { return false }
-        return hosted[tab]?.webView.canGoForward ?? false
+private extension Array {
+    /// The front of the queue, or nothing.
+    ///
+    /// Spelled out because `removeFirst` traps on an empty array, and a trap
+    /// in the adoption path is a browser that dies because nobody asked for a
+    /// view — the refusal is the answer, not a crash.
+    mutating func popFirst() -> Element? {
+        isEmpty ? nil : removeFirst()
     }
 }

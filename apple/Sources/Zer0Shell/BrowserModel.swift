@@ -306,16 +306,23 @@ public final class BrowserModel {
     /// `storagePath: nil` keeps everything in memory, which is what the tests
     /// use so they never touch a real session.
     init(storagePath: String?) {
+        // The one declaration of what this host can do. True because this
+        // shell is built around `WKWebExtensionController`; the core refuses
+        // what is left out, so a host that grows or loses a runtime says so
+        // here, at the door, and nowhere else (ADR-0117).
+        let capabilities = HostCapabilities(extensionRuntime: true)
         if let storagePath {
             core = Zer0.open(
                 dbPath: storagePath,
                 firstSpaceName: "Personal",
-                dataStoreId: UUID().uuidString
+                dataStoreId: UUID().uuidString,
+                capabilities: capabilities
             )
         } else {
             core = Zer0.inMemory(
                 firstSpaceName: "Personal",
-                dataStoreId: UUID().uuidString
+                dataStoreId: UUID().uuidString,
+                capabilities: capabilities
             )
         }
         // The one place the system's language crosses into the core, and the
@@ -545,7 +552,16 @@ public final class BrowserModel {
         if case let .pageClosedWindow(tab) = action { pageAskedToCloseATab = tab }
         let commands = core.dispatch(action: action)
         engine.perform(commands)
-        refresh()
+        // The pair the action can change, and nothing else: bookmarks move on
+        // the three bookmark actions alone, and those are the ones
+        // `isStructural` already enumerates for the save — the same door, so
+        // a bookmark action added without that switch fails the session,
+        // loudly, before it can fail this list. Everything else (an engine
+        // report above all) recomputes the list to learn nothing, and that
+        // recompute was measured as most of the cost of the back/forward
+        // reports (2026-08-16): one FFI round trip per navigation spent on a
+        // byte-for-byte identical answer.
+        refresh(bookmarks: Self.isStructural(action))
         spaceTravel = Self.travel(
             from: previousSpace,
             to: snapshot.activeSpace,
@@ -696,7 +712,12 @@ public final class BrowserModel {
              .navigationStateChanged,
              // And a refusal writes nothing at all. It says the bytes we had
              // were no good, which the next save leaves out on its own.
-             .navigationStateRefused:
+             .navigationStateRefused,
+             // The engine's back/forward answer describes this run's view,
+             // which a restart's engine has not said anything about yet. The
+             // flags are cleared at the projection, so a save triggered here
+             // would write down exactly what the last one did.
+             .navigationStackChanged:
             false
         }
     }
@@ -831,7 +852,11 @@ public final class BrowserModel {
              // relaunch can hand it back. There is no `chrome.tabs` property it
              // corresponds to, and an extension handed one could read nothing
              // from it anyway.
-             .navigationStateChanged, .navigationStateRefused:
+             .navigationStateChanged, .navigationStateRefused,
+             // The same archive's readable half: whether the tab can go back
+             // and forward. `chrome.tabs` has no property for it, and the
+             // navigation events an extension does get already say what moved.
+             .navigationStackChanged:
             break
         }
     }
@@ -895,9 +920,14 @@ public final class BrowserModel {
         }
     }
 
-    private func refresh() {
+    /// `true` unless a caller knows better, which only `send` does: it passes
+    /// `isStructural`, because no other action moves a bookmark and the
+    /// engine's reports arrive per navigation.
+    private func refresh(bookmarks recomputeBookmarks: Bool = true) {
         snapshot = core.snapshot()
-        bookmarks = core.bookmarks()
+        if recomputeBookmarks {
+            bookmarks = core.bookmarks()
+        }
         conversationRevision &+= 1
         // Three of the four page panels are SwiftUI sheets and are drawn from
         // this snapshot by `BrowserView`. The fourth is the system's file
@@ -1912,7 +1942,8 @@ public final class BrowserModel {
     }
 
     /// Hand the engine the settings a person is allowed to change
-    /// (ADR-0074, ADR-0075).
+    /// (ADR-0074, ADR-0075) and the browser behaviour the core decided
+    /// (ADR-0120).
     ///
     /// Beside `applyBlockingChange` and for the same reason: this is the one
     /// door every preference goes through, so there is no list of fields to
@@ -1921,7 +1952,9 @@ public final class BrowserModel {
         let prefs = core.preferences()
         engine.policy = EnginePolicy.Choices(
             blockAudibleAutoplay: prefs.blockAudibleAutoplay,
-            blockUnpromptedWindows: prefs.blockUnpromptedWindows
+            blockUnpromptedWindows: prefs.blockUnpromptedWindows,
+            backgroundThrottling: prefs.backgroundThrottling,
+            httpsFirst: prefs.httpsFirst
         )
     }
 

@@ -415,3 +415,42 @@ fn a_page_that_died_in_a_tab_that_is_gone_is_ignored() {
 
     assert!(commands.is_empty());
 }
+
+// --- the readable half of the same list --------------------------------------
+
+/// The engine's back/forward *answer* is this run's, not the page's. Unlike
+/// the opaque archive beside it, a stored `true` would be read back as a
+/// promise the restored engine has not made, so the projection clears it and
+/// the restored tab starts from silence.
+#[cfg(feature = "store")]
+#[test]
+fn the_back_and_forward_answer_is_never_written_down() {
+    let (mut session, tab) = browsed(false);
+    dispatch(
+        &mut session,
+        Action::NavigationStackChanged {
+            tab,
+            can_go_back: true,
+            can_go_forward: true,
+        },
+    );
+
+    let projection = StorableSession::project(&session);
+    let stored = projection
+        .spaces
+        .iter()
+        .flat_map(|s| s.tabs.iter())
+        .find(|t| t.tab.id == tab)
+        .expect("the tab is in the projection");
+    assert!(
+        !stored.tab.can_go_back && !stored.tab.can_go_forward,
+        "the engine's answer reached the file"
+    );
+
+    let after = round_trip(&session);
+    let restored = after.browser.tab(tab).expect("the tab comes back");
+    assert!(
+        !restored.can_go_back && !restored.can_go_forward,
+        "a restored tab claims an engine answer before any engine spoke"
+    );
+}

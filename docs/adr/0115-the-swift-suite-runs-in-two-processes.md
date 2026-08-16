@@ -88,7 +88,15 @@ The quieter regression is the list shrinking in meaning: if run one is ever
 changed from `--skip` of the same variable run two filters, a suite with a
 custom display name (the MCP and palette suites carry them) can fall between
 the two runs and the gate reports green having run less than everything. The
-sum of the two runs' test counts is the number to eyeball for that: 662 today.
+sum of the two runs' test counts is the number to eyeball for that: 676 today
+(439 + 237), grown from 662 on 2026-08-16 — run one flaked red at 470 in 11
+of 19 full runs with the victim varying per run (restored `file://` loads,
+download resume, autoplay), every failure a WebKit load starving past its
+deadline while the clean HEAD stayed green under synthetic load 13. That is
+this record's maintenance clause firing, not a new decision: the fragile
+end-to-end suites (downloads, navigation restore, engine policy) moved to the
+second list, and the trigger (`PageProcessTests`) stayed in the now-smaller
+run one.
 
 ## When to revisit
 

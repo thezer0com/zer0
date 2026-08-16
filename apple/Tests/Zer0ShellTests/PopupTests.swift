@@ -396,6 +396,53 @@ struct PopupTests {
         #expect(model.snapshot.tabs.count == 2, "and the window it opened became a tab")
     }
 
+    /// Two `window.open` calls in the same script, both approved, both owed a
+    /// view.
+    ///
+    /// The delegate has to answer synchronously, and the slot that pairs an
+    /// adoption with its `AdoptWebView` used to hold exactly one pending
+    /// configuration. A second open that arrived while the first was still
+    /// being adopted was answered with `nil` — which is the page's spelling of
+    /// a pop-up blocker nobody configured. The core had already said yes to
+    /// both; refusing the second was a limit of the mechanism wearing a
+    /// decision's clothes.
+    @Test("two approved windows opened in the same breath both arrive")
+    func twoApprovedWindowsOpenedTogetherBothArrive() async throws {
+        let server = try await serve()
+        defer { server.stop() }
+        let origin = "http://127.0.0.1:\(server.port)"
+
+        let model = BrowserModel(storagePath: nil)
+        let (openerTab, parent) = try await openParent(model, at: origin)
+        let window = testWindow(NSRect(x: 0, y: 0, width: 800, height: 600))
+        defer { window.close() }
+        show(parent, in: window)
+
+        // One gesture, two opens: each call is approved on its own, and the
+        // page is owed an answer for both. The outcomes are read back from the
+        // page rather than from our own delegate, so a `null` here is what a
+        // site would have seen.
+        _ = try? await parent.evaluateJavaScript("""
+        var a = window.open('\(origin)/child', 'one', 'width=300,height=300');
+        var b = window.open('\(origin)/child', 'two', 'width=300,height=300');
+        [a === null ? 'null' : 'object', b === null ? 'null' : 'object'].join()
+        """)
+        _ = await eventually { model.snapshot.tabs.filter { $0.openedByPage }.count == 2 }
+
+        let opened = model.snapshot.tabs.filter { $0.openedByPage }
+        #expect(opened.count == 2, """
+            \(2 - opened.count) of the two windows a page opened with one gesture died. The core
+            approved both; only the shell's single adoption slot stands between them (ADR-0075).
+            """)
+        for tab in opened {
+            #expect(
+                model.engine.webView(for: tab.id) != nil,
+                "the tab arrived without a view of its own"
+            )
+        }
+        #expect(opened.allSatisfy { $0.parent == openerTab }, "the tree lost where these came from")
+    }
+
     /// One door, counted rather than trusted.
     ///
     /// `createWebViewWith` is the only place a pop-up can come from, and

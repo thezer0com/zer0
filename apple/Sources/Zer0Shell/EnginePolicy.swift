@@ -18,16 +18,25 @@ import WebKit
 /// off the header comments; the numbers are in ADR-0074.
 @MainActor
 enum EnginePolicy {
-    /// The one answer a person is allowed to change.
+    /// The answers that arrive from somewhere else rather than being spelled
+    /// here.
     ///
     /// A struct with the default spelled out, rather than an optional the host
     /// reads through, so a host nobody has configured still blocks. The safe
     /// direction is the shipped direction. It is a struct rather than a bare
     /// `Bool` because the second setting to earn a switch should not have to
     /// change three signatures to get here.
+    ///
+    /// Two of these are Settings rows a person flips; the other two are
+    /// browser behaviour the core decided and this sheet delivers —
+    /// background-tab throttling and HTTPS-first are the same promise on
+    /// every platform, so they live in `Preferences` and a host that
+    /// re-decided them would be drifting, not differing (ADR-0120).
     struct Choices: Equatable {
         var blockAudibleAutoplay = true
         var blockUnpromptedWindows = true
+        var backgroundThrottling = true
+        var httpsFirst = true
     }
 
     /// Everything the engine is told before a view exists.
@@ -74,7 +83,13 @@ enum EnginePolicy {
         // again when something touched it. `zer0` shows one tab at a time, so
         // "out of the window" is what every tab that is not the front one looks
         // like — the default freezes them all.
-        preferences.inactiveSchedulingPolicy = .throttle
+        //
+        // The value is the core's, not this sheet's: what a background tab is
+        // allowed to do is browser behaviour every host would answer the same,
+        // so it arrives in `Choices` from `Preferences` (ADR-0120). Off is
+        // `.none` — full speed — and deliberately not `.suspend`, which is
+        // more throttling rather than less.
+        preferences.inactiveSchedulingPolicy = choices.backgroundThrottling ? .throttle : .none
 
         // Both already the default, both written down because they are the
         // kind of thing a future edit drops in passing: the first is the only
@@ -101,7 +116,13 @@ enum EnginePolicy {
         // puts WebKit's own interstitial on screen, which is chrome we do not
         // draw and cannot restyle, over a failure ADR-0016 says gets our whole
         // screen.
-        config.defaultWebpagePreferences.preferredHTTPSNavigationPolicy = .automaticFallbackToHTTP
+        //
+        // The policy itself is the core's, not this sheet's: navigation
+        // behaviour every host would answer the same, so it arrives in
+        // `Choices` from `Preferences`, silent fallback included (ADR-0120).
+        // Off is `.keepAsRequested` — a typed http address navigates as typed.
+        config.defaultWebpagePreferences.preferredHTTPSNavigationPolicy =
+            choices.httpsFirst ? .automaticFallbackToHTTP : .keepAsRequested
 
         // `.audio`, never `.all`. Measured: `.audio` blocks an `<audio
         // autoplay>` with `NotAllowedError` and lets a muted element through,
