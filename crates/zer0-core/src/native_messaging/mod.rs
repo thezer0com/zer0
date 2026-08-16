@@ -45,7 +45,6 @@ mod ledger;
 mod wire;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
 pub use ledger::{NativeHostDecision, NativeHostLedger};
@@ -592,7 +591,7 @@ fn read(
             program,
         });
     }
-    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+    if !metadata.is_file() || !is_executable(&metadata) {
         return Err(HostRefusal::ProgramNotExecutable {
             manifest_path,
             program,
@@ -610,6 +609,23 @@ fn read(
         registrar: registrar.name.clone(),
         registrar_is_ours: registrar.ours,
     })
+}
+
+/// Whether the metadata says this file may be started: any of the three
+/// execute bits.
+///
+/// Off unix there is no bit to read, and a program this browser cannot prove
+/// may run is not a program it starts — `false` is the fail-closed answer, not
+/// a guess at the platform's own rules.
+#[cfg(unix)]
+fn is_executable(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 /// Whether this registration authorises this extension.
