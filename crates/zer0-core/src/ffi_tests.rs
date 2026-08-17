@@ -89,15 +89,17 @@ fn a_real_session() -> Session {
 }
 
 fn open_at(path: &Path) -> Arc<Zer0> {
-    // These tests never install anything, so they say so: a host with no
-    // extension runtime is the honest default, and the state every shell that
-    // forgot to answer would be in if the declaration were optional.
+    // These tests never install anything and never print, so they say so: a
+    // host with no extension runtime is the honest default, and the state
+    // every shell that forgot to answer would be in if the declaration were
+    // optional.
     Zer0::open(
         path.to_str().unwrap().to_string(),
         "Personal".into(),
         "ds-fresh".into(),
         HostCapabilities {
             extension_runtime: false,
+            page_printing: false,
         },
     )
 }
@@ -505,6 +507,7 @@ fn a_host_that_declared_no_extension_runtime_is_refused_installation() {
         "ds".into(),
         HostCapabilities {
             extension_runtime: false,
+            page_printing: false,
         },
     );
 
@@ -535,6 +538,7 @@ fn a_host_that_declared_an_extension_runtime_installs() {
         "ds".into(),
         HostCapabilities {
             extension_runtime: true,
+            page_printing: false,
         },
     );
 
@@ -544,5 +548,125 @@ fn a_host_that_declared_an_extension_runtime_installs() {
     assert!(
         !zer0.installed_extensions().is_empty(),
         "the row the installer draws from has to exist after a real install"
+    );
+}
+
+/// The declaration's second consumer. A host that declared no page printing
+/// has no print chord anywhere the keymap is read: the press door answers
+/// nothing, the menu door advertises nothing, and the Settings list — built
+/// from the same bindings — offers nothing to rebind. And a reset, which
+/// mints the defaults again, must not bring the chord back (ADR-0118).
+#[test]
+fn a_host_that_declared_no_page_printing_answers_no_print_chord() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds".into(),
+        HostCapabilities {
+            extension_runtime: false,
+            page_printing: false,
+        },
+    );
+
+    assert_eq!(zer0.command_for_chord(Chord::primary("p")), None);
+    assert_eq!(zer0.chord_for_command(UiCommand::PrintPage), None);
+    assert!(
+        !zer0
+            .keymap()
+            .iter()
+            .any(|b| b.command == UiCommand::PrintPage),
+        "the binding must not exist to be listed, advertised or offered"
+    );
+
+    zer0.reset_keymap();
+
+    assert_eq!(
+        zer0.command_for_chord(Chord::primary("p")),
+        None,
+        "a reset mints the defaults again and must not resurrect a retired chord"
+    );
+}
+
+/// The other half of the gate: a host that declared page printing keeps the
+/// chord Chrome's fingers already know, through both doors. Without this, a
+/// retirement that dropped the chord on every host would pass the test
+/// above, and the macOS File menu would have quietly lost its ⌘P.
+#[test]
+fn a_host_that_declared_page_printing_answers_the_print_chord() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds".into(),
+        HostCapabilities {
+            extension_runtime: false,
+            page_printing: true,
+        },
+    );
+
+    assert_eq!(
+        zer0.command_for_chord(Chord::primary("p")),
+        Some(UiCommand::PrintPage)
+    );
+    assert_eq!(
+        zer0.chord_for_command(UiCommand::PrintPage),
+        Some(Chord::primary("p"))
+    );
+}
+
+/// The mint is not the only door. `bind` and `rebind` can hand a chord to a
+/// command the mint retired, and that is the resurrection ADR-0118 exists to
+/// prevent: the binding would be listed by `keymap`, answered by
+/// `command_for_chord`, and — once the chord differs from the default, which
+/// is what the one below was picked for — saved by `customisations` and
+/// waiting for the next load. Both doors re-retire, so a command this host
+/// cannot run stays unrunnable at every door, not just at the mints.
+#[test]
+fn a_host_that_declared_no_page_printing_answers_no_rebound_print_chord() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds".into(),
+        HostCapabilities {
+            extension_runtime: false,
+            page_printing: false,
+        },
+    );
+
+    // A chord the defaults give to another command (⌘Y is ShowHistory), so a
+    // binding placed here differs from every default and would be saved.
+    let chord = Chord::primary("y");
+
+    zer0.rebind_shortcut(UiCommand::PrintPage, chord.clone());
+    zer0.bind_shortcut(chord.clone(), UiCommand::PrintPage);
+
+    assert_eq!(
+        zer0.chord_for_command(UiCommand::PrintPage),
+        None,
+        "a retired command must not gain a chord at the binding doors"
+    );
+    assert_eq!(
+        zer0.command_for_chord(chord),
+        None,
+        "the chord must not answer to a command this host cannot run"
+    );
+    let saved = zer0.lock().session.keymap.customisations();
+    assert!(
+        !saved.iter().any(|b| b.command == UiCommand::PrintPage),
+        "a resurrected binding that saved would come back on the next load"
+    );
+}
+
+/// The version the core reports is the version Cargo built it as. A host that
+/// prints it — the iOS host's proof-of-life screen is the first — must never
+/// see a hand-copied string that survived a version bump.
+#[test]
+fn core_version_is_the_version_cargo_built() {
+    let version = core_version();
+
+    assert_eq!(
+        version,
+        env!("CARGO_PKG_VERSION"),
+        "the core reports the version it was built as, not a copy that can drift"
+    );
+    assert!(
+        version.split('.').count() >= 3 && version.starts_with(|c: char| c.is_ascii_digit()),
+        "a host renders this string as-is, so it must be major.minor.patch shaped: {version}"
     );
 }

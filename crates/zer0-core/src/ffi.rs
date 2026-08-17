@@ -118,6 +118,17 @@ pub struct BrowserSnapshot {
     pub certificate_report: Option<CertificateReport>,
 }
 
+/// The version of the core itself, so a host can show or log which core it
+/// linked without keeping a second copy of the string that can drift.
+///
+/// A free function for the same reason `mcp_protocol_version` is one: the
+/// version is a fact about the core, and a host that hardcoded it would
+/// report the core it shipped last month.
+#[uniffi::export]
+pub fn core_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// How far along a download is, or `None` when that cannot be worked out.
 ///
 /// A free function because a uniffi record carries no methods across the FFI,
@@ -325,7 +336,15 @@ fn scratch_extensions_dir() -> PathBuf {
     ))
 }
 
-/// Handle held by the shell for the lifetime of the app.
+/// The one place a capability retires a command from the keymap.
+///
+/// Called at every mint — both constructors (after any stored session was
+/// loaded, so a custom binding saved on another host cannot survive the
+/// trip) and `reset_keymap`, which mints the defaults again — and after
+/// every bind and rebind, the doors that can hand a retired command a
+/// chord at runtime — because a retirement any of them could resurrect
+/// would be the gate reopening behind Handle held by the shell for the
+/// lifetime of the app.
 #[derive(uniffi::Object)]
 pub struct Zer0 {
     // The shell calls in from the main thread today, but WKWebView delegates
@@ -383,9 +402,11 @@ impl Zer0 {
         data_store_id: String,
         capabilities: HostCapabilities,
     ) -> Arc<Self> {
+        let mut session = Session::new(first_space_name, data_store_id);
+        session.retire_what_the_host_cannot_run(capabilities);
         Arc::new(Self {
             state: Mutex::new(State {
-                session: Session::new(first_space_name, data_store_id),
+                session,
                 capabilities,
                 store: None,
                 icons: None,
@@ -449,6 +470,10 @@ impl Zer0 {
         // (ADR-0060 drops a thread whose address this build cannot read). The
         // pass costs one walk over the tabs at launch.
         reducer::name_our_pages(&mut session);
+        // After the load, not before it: a keymap saved on a host that can
+        // print may carry a print binding, and it must not arrive answered
+        // on one that cannot.
+        session.retire_what_the_host_cannot_run(capabilities);
 
         // Deliberately not gated on `load_error`. This is a different file
         // holding a cache, so an unreadable session cannot corrupt it and a
@@ -1001,7 +1026,10 @@ impl Zer0 {
     /// Every binding, for building menus and for matching key presses.
     ///
     /// The shell renders these; it does not decide them. That is what keeps
-    /// ⌘T meaning the same thing on macOS and Ctrl+T on Linux.
+    /// ⌘T meaning the same thing on macOS and Ctrl+T on Linux. A command
+    /// this host declared it cannot run is not in the list at all — retired
+    /// where the keymap is minted, so a menu built from this never wears a
+    /// chord whose press does nothing (ADR-0118).
     pub fn keymap(&self) -> Vec<Binding> {
         self.lock().session.keymap.bindings().to_vec()
     }
@@ -1017,12 +1045,23 @@ impl Zer0 {
 
     /// Add a chord for a command, leaving any it already had.
     pub fn bind_shortcut(&self, chord: Chord, command: UiCommand) {
-        self.lock().session.keymap.bind(chord, command);
+        let mut state = self.lock();
+        state.session.keymap.bind(chord, command);
+        // A bind can hand a chord to a command the mint retired; without
+        // this, this door resurrects it — answered, advertised and, once
+        // the chord differs from the default, saved (ADR-0118).
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     /// Make this the command's only chord.
     pub fn rebind_shortcut(&self, command: UiCommand, chord: Chord) {
-        self.lock().session.keymap.rebind(command, chord);
+        let mut state = self.lock();
+        state.session.keymap.rebind(command, chord);
+        // Same rule as `bind_shortcut` above: a command this host cannot
+        // run cannot come back by being given a different chord.
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     pub fn unbind_shortcut(&self, chord: Chord) -> bool {
@@ -1030,7 +1069,12 @@ impl Zer0 {
     }
 
     pub fn reset_keymap(&self) {
-        self.lock().session.keymap.reset();
+        let mut state = self.lock();
+        state.session.keymap.reset();
+        // The defaults this just minted include every command; what this
+        // host declared it cannot run goes back out again (ADR-0118).
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     // MARK: - Extensions

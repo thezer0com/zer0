@@ -1,4 +1,11 @@
+// The dynamic-provider spelling is the one thing in this file that is not
+// SwiftUI: NSColor on macOS, UIColor on iOS, same bytes and same two
+// appearances either way.
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 // MARK: - The palette, adopted
@@ -155,6 +162,7 @@ extension Design {
 // MARK: - One colour, two appearances
 
 extension Swatch {
+    #if canImport(AppKit)
     var nsColor: NSColor {
         NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
     }
@@ -173,6 +181,23 @@ extension Swatch {
                 : light.nsColor
         })
     }
+    #else
+    var uiColor: UIColor {
+        UIColor(red: red, green: green, blue: blue, alpha: 1)
+    }
+
+    /// A colour that answers the appearance it is drawn in.
+    ///
+    /// The iOS half of the same rule: a dynamic `UIColor` provider is
+    /// resolved against the trait collection of whatever is drawing it, so
+    /// the Theme setting keeps working and no view has to remember to ask.
+    /// Same bytes, same two appearances, same separation as the AppKit half.
+    static func dynamic(light: Swatch, dark: Swatch) -> Color {
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? dark.uiColor : light.uiColor
+        })
+    }
+    #endif
 }
 
 // MARK: - Wearing it

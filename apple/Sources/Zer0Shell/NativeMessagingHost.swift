@@ -326,6 +326,12 @@ final class NativeMessagingHost {
 
 // MARK: - The actual pipes
 
+// Foundation's `Process` is not in the iOS SDK, and an iPhone's sandbox would
+// refuse to run a child program even if it were. The host above treats a
+// missing `makeLink` as the honest refusal ("zer0 is not able to start
+// programs."), so iOS simply never sets one; the pipes live where `Process`
+// does.
+#if canImport(AppKit)
 /// A child process, spoken to over its stdin and stdout with Chrome's framing.
 ///
 /// The only part of this file a Linux port has to replace, and deliberately the
@@ -510,3 +516,4 @@ final class NativeHostProcess: NativeHostLink {
         onClose?(said.isEmpty ? "\(name) stopped with status \(status)." : said)
     }
 }
+#endif

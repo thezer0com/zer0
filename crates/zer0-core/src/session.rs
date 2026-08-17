@@ -20,8 +20,9 @@ use crate::native_messaging::NativeHostLedger;
 use crate::navigation_state::NavigationStates;
 use crate::page_dialogs::PageDialogs;
 use crate::preferences::Preferences;
+use crate::protocol::HostCapabilities;
 use crate::routing::RoutingTable;
-use crate::shortcuts::Keymap;
+use crate::shortcuts::{Keymap, UiCommand};
 use crate::site_permissions::SitePermissions;
 
 /// Enough of a closed tab to bring it back.
@@ -220,6 +221,25 @@ impl Session {
             certificate_reports: HashMap::new(),
             navigation_states: NavigationStates::new(),
             closed_tabs: Vec::new(),
+        }
+    }
+
+    /// Take back what the host declared it cannot run (ADR-0118).
+    ///
+    /// Print is the one command a capability retires, and the reason is the
+    /// platform's: a host with no way to put a print panel up has no road to
+    /// [`UiCommand::PrintPage`], and the binding is taken out rather than
+    /// guarded at the answer doors so that nothing can list it, advertise it
+    /// or offer it for rebinding.
+    ///
+    /// On `Session` rather than in the FFI layer because the rule belongs to
+    /// the door every host passes through — the FFI constructors and the
+    /// Linux host, which links this crate directly with no binding between
+    /// them (ADR-0122). A free function inside `ffi.rs` would be a second
+    /// door the non-FFI host cannot use and must not re-state.
+    pub fn retire_what_the_host_cannot_run(&mut self, capabilities: HostCapabilities) {
+        if !capabilities.page_printing {
+            self.keymap.retire(&UiCommand::PrintPage);
         }
     }
 }

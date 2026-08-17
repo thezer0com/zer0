@@ -30,7 +30,7 @@ private func newHost(_ model: BrowserModel) -> StoreInstallHost {
     StoreInstallHost(model: model, hosts: Zer0.inMemory(
         firstSpaceName: "Personal",
         dataStoreId: UUID().uuidString,
-        capabilities: HostCapabilities(extensionRuntime: false)
+        capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
     ).extensionStoreHosts())
 }
 
@@ -49,7 +49,7 @@ struct StoreInstallHostRuleTests {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         let context = try #require(JSContext())
         let source = StoreInstallScript.hostGuard(core.extensionStoreHosts())
@@ -64,7 +64,7 @@ struct StoreInstallHostRuleTests {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         return core.extensionIdForUrl(url: "https://\(host)/detail/name/\(listingId)") != nil
     }
@@ -120,7 +120,7 @@ struct StoreInstallHostRuleTests {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         let source = StoreInstallScript.source(hosts: core.extensionStoreHosts())
         // The guard is the first statement and it tests the scheme as well as
@@ -226,7 +226,7 @@ struct StoreInstallButtonStateTests {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         let source = StoreInstallScript.source(hosts: core.extensionStoreHosts())
 

@@ -545,6 +545,10 @@ extension McpFailure {
 
 // MARK: - The actual pipes
 
+// Foundation's `Process` is not in the iOS SDK. `makeMcpLink` refuses a stdio
+// server out loud on iOS, so the pipes never run there; they live where
+// `Process` does.
+#if canImport(AppKit)
 /// A child process, spoken to over its stdin and stdout.
 ///
 /// The only part of this file a Linux port has to replace, and deliberately the
@@ -694,3 +698,4 @@ final class StdioLink: McpLink {
         )
     }
 }
+#endif

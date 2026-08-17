@@ -1,0 +1,26 @@
+[package]
+name = "zer0-linux"
+description = "The Linux host for zer0: a GTK shell that carries out the core's commands on WebKitGTK."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "zer0"
+path = "src/main.rs"
+
+[dependencies]
+zer0-core = { path = "../../crates/zer0-core" }
+# GTK4 and WebKitGTK's GTK4 API. `v4_12` because `CssProvider::load_from_data`
+# is deprecated from 4.12 and clippy denies warnings, so the shell uses
+# `load_from_string` — and that floor is what the CI runner's GTK 4.14 pays for.
+gtk4 = { version = "0.11", features = ["v4_12"] }
+webkit6 = "0.6"
+# Reading design/tokens.toml (ADR-0117): the same parser the core's config
+# reads, so one TOML dialect across the repo. `parse` only — this shell never
+# writes the file.
+toml_edit = { version = "0.25.13", default-features = false, features = ["parse"] }
+
+[lints]
+workspace = true

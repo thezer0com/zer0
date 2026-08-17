@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
@@ -65,7 +69,7 @@ enum ExternalScheme {
         case .refuse:
             return true
         case let .open(url):
-            Self.hand(url, to: NSWorkspace.shared)
+            Self.hand(url)
             return true
         }
     }
@@ -101,12 +105,32 @@ enum ExternalScheme {
     /// The beep is what this browser has for "that did nothing", and it is
     /// already what a failed Save Page As does. It is not a sentence, and the
     /// sentence is missing: see ADR-0092.
+    ///
+    /// One name on both platforms rather than an overload per platform, so
+    /// the one-door scan in `ExternalSchemeDoorTests` keeps counting the one
+    /// place a page's address leaves this browser.
     @MainActor
-    static func hand(_ url: URL, to workspace: NSWorkspace) {
+    static func hand(_ url: URL) {
+        #if canImport(AppKit)
+        let workspace = NSWorkspace.shared
         guard workspace.urlForApplication(toOpen: url) != nil else {
             NSSound.beep()
             return
         }
         workspace.open(url)
+        #else
+        // The macOS gate's *meaning* is kept and its mechanism replaced,
+        // because the mechanism does not exist here: `canOpenURL` answers
+        // nothing unless every candidate scheme is listed in
+        // `LSApplicationQueriesSchemes`, which is a claim about the future of
+        // every app somebody might install. So the system is asked directly,
+        // and its own completion is the refusal — it says whether anything
+        // opened, which is the same "never guess, never fall back to search"
+        // bargain the workspace gate makes. What is not preserved is the
+        // beep: there is no equivalent this host has yet, and inventing
+        // feedback UI here would be deciding it in the engine rather than
+        // where the interface lives.
+        UIApplication.shared.open(url)
+        #endif
     }
 }

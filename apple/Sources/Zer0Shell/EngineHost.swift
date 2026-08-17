@@ -162,7 +162,14 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
         // being get it: a pop-up arrives with the engine's own configuration and
         // nothing this host may substitute, but the content controller inside it
         // is the same object either way. See `PagePrintScript` (ADR-0101).
+        // macOS only: the attach is the door ADR-0118 leaves to the host, and a
+        // host that cannot print never attaches the channel — iOS WebKit has no
+        // print UI, and without the channel a page keeps WebKit's own inert
+        // `window.print` instead of posting an action the shell could only
+        // refuse in silence.
+        #if canImport(AppKit)
         PagePrintChannel.attach(to: webView)
+        #endif
 
         observations = [
             webView.observe(\.title, options: [.new]) { [weak self] view, _ in
@@ -678,10 +685,25 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
     /// Serialised rather than interpreted: whether this colour is usable, and
     /// what it means if it is, is decided in the core along with every other
     /// source.
-    static func cssColor(_ color: NSColor?) -> String? {
+    static func cssColor(_ color: SiteColor?) -> String? {
+        #if canImport(AppKit)
         guard let srgb = color?.usingColorSpace(.sRGB) else { return nil }
         var (r, g, b, a) = (CGFloat(0), CGFloat(0), CGFloat(0), CGFloat(0))
         srgb.getRed(&r, green: &g, blue: &b, alpha: &a)
+        #else
+        // `UIColor` has no `usingColorSpace`; its bridge to sRGB is Core
+        // Graphics. A colour that will not cross — or crosses to something
+        // that is not four components — is refused exactly as the macOS guard
+        // refuses one that will not convert: no colour, not black.
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let cg = color?.cgColor.converted(
+                  to: space, intent: .defaultIntent, options: nil
+              ),
+              cg.numberOfComponents == 4,
+              let parts = cg.components
+        else { return nil }
+        let (r, g, b, a) = (parts[0], parts[1], parts[2], parts[3])
+        #endif
         return String(
             format: "rgba(%.0f, %.0f, %.0f, %.4f)",
             r * 255, g * 255, b * 255, a

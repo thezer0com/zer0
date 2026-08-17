@@ -26,7 +26,7 @@ struct ZZExtensionOfferShots {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         return core.extensionConsentRequest(extension: InstalledExtension(
             id: String(repeating: "a", count: 32),

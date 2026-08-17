@@ -217,11 +217,23 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     }
 
     func frame(for _: WKWebExtensionContext) -> CGRect {
+        #if canImport(AppKit)
         BrowserWindows.window(for: id)?.frame ?? .zero
+        #else
+        // iOS has no per-window geometry to report — extensions live in the
+        // one scene — and `.zero` is the same "no frame" answer the macOS
+        // branch gives for a window that is not on screen.
+        .zero
+        #endif
     }
 
     func screenFrame(for _: WKWebExtensionContext) -> CGRect {
+        #if canImport(AppKit)
         NSScreen.main?.frame ?? .zero
+        #else
+        // See `frame` above: one scene, no screen split to describe.
+        .zero
+        #endif
     }
 }
 

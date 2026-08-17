@@ -208,7 +208,7 @@ private final class AssistantProbeBrowser {
         core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
     }
 

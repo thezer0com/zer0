@@ -133,10 +133,20 @@ impl WindowRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct HostCapabilities {
-    /// Whether this host can load and run extensions at all. The one field,
-    /// because [`crate::ffi::Zer0::install_extension`] is the one consumer
-    /// today; a second field arrives with the behaviour that asks about it.
+    /// Whether this host can load and run extensions at all.
+    /// [`crate::ffi::Zer0::install_extension`] is the consumer.
     pub extension_runtime: bool,
+    /// Whether this host can put a print panel up at all. `WKWebView` has
+    /// no public print API off the Mac — `printOperation` is
+    /// `macos(11.0)`-only in the iPhoneOS 26.5 SDK, measured — so a host
+    /// that cannot print declares it here and the core retires
+    /// [`crate::shortcuts::UiCommand::PrintPage`] from every keymap it
+    /// mints: no press is answered for it, no menu row wears a chord for
+    /// it, and Settings never offers to rebind one (ADR-0118). The row
+    /// itself is the shell's to draw and place (ADR-0091); the chord it
+    /// would wear is the core's, and a chord to a panel this host cannot
+    /// put up is a lie of affordance (ADR-0018).
+    pub page_printing: bool,
 }
 
 /// Why a reply stopped, as the provider host read it.

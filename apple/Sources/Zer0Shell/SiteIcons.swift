@@ -1,6 +1,32 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import Zer0Core
+
+/// The platform's own image type: `NSImage` here, `UIImage` on iOS.
+///
+/// One spelling for the whole icon pipeline — `SiteIcons` decodes it,
+/// `BrowserModel.icon(forHost:)` hands it out, `SiteBadge.Subject` carries it
+/// — so each signature states the platform once here instead of carrying a
+/// `#if` of its own.
+#if canImport(AppKit)
+typealias SiteImage = NSImage
+#else
+typealias SiteImage = UIImage
+#endif
+
+/// The platform's colour type, for the one colour an engine hands the shell
+/// (`underPageBackgroundColor`, serialised to CSS by
+/// `HostedWebView.cssColor`). Sits beside `SiteImage` so the platform
+/// spellings live in one file.
+#if canImport(AppKit)
+typealias SiteColor = NSColor
+#else
+typealias SiteColor = UIColor
+#endif
 
 /// Cached bytes, turned into something a row can draw.
 ///
@@ -16,7 +42,7 @@ final class SiteIcons {
 
     /// Decoded once and kept for the run. An icon does not change while the
     /// app is open, and every sidebar row asks for its own on every redraw.
-    private var drawn: [Key: NSImage] = [:]
+    private var drawn: [Key: SiteImage] = [:]
 
     /// Sites the core had nothing for, and the revision we asked at.
     ///
@@ -43,7 +69,7 @@ final class SiteIcons {
     /// would not decode. The badge draws the same thing for all three, which
     /// is the point: the fallback is what shows while a real icon is still on
     /// its way, so a row never flashes empty.
-    func image(space: SpaceId, host: String?, revision: UInt64) -> NSImage? {
+    func image(space: SpaceId, host: String?, revision: UInt64) -> SiteImage? {
         guard let host, !host.isEmpty else { return nil }
         let key = Key(space: space, host: host.lowercased())
 
@@ -51,11 +77,11 @@ final class SiteIcons {
         if absent[key] == revision { return nil }
 
         // A file that came off the network and then off the disk gets one more
-        // chance to be nothing: `NSImage` will happily return an object with no
-        // size for bytes it could not make sense of, and drawing that is a
+        // chance to be nothing: `SiteImage` will happily return an object with
+        // no size for bytes it could not make sense of, and drawing that is a
         // blank square where the letter used to be.
         guard let data = bytes(key.space, key.host),
-              let image = NSImage(data: data),
+              let image = SiteImage(data: data),
               image.size.width > 0, image.size.height > 0
         else {
             absent[key] = revision

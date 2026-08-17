@@ -2,21 +2,6 @@ import AppKit
 import SwiftUI
 import Zer0Core
 
-extension BrowserTab {
-    /// Presentation only, which is why it lives on this side. Anything that
-    /// changes behaviour belongs in the reducer.
-    var displayTitle: String {
-        if let title, !title.isEmpty { return title }
-        if let url, !url.isEmpty { return url }
-        return "New Tab"
-    }
-
-    var host: String? {
-        guard let url, let parsed = URL(string: url) else { return nil }
-        return parsed.host()
-    }
-}
-
 /// Vertical tabs, grouped the way Arc groups them: favorites that follow you
 /// everywhere, pinned tabs that belong to the space, and today's tabs that
 /// expire on their own.

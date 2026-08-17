@@ -34,7 +34,7 @@ struct ContentBlockingTests {
         Zer0.inMemory(
             firstSpaceName: "Test",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
     }
 

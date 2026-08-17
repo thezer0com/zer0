@@ -26,7 +26,7 @@ struct ChromeTintTests {
         let core = Zer0.inMemory(
             firstSpaceName: "Personal",
             dataStoreId: UUID().uuidString,
-            capabilities: HostCapabilities(extensionRuntime: false)
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
         )
         _ = core.dispatch(action: .openTab(space: nil, url: nil, parent: nil))
         return (core, core.snapshot().activeTab!)

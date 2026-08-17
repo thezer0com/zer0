@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
@@ -26,6 +28,10 @@ import Zer0Core
 /// and cancelling from the handler was tried and hangs the same way. The only
 /// way to read a real engine-built menu is from inside `willOpenMenu`, and the
 /// only way for a test to get in there is to subclass. `PageMenuTests` does.
+///
+/// On iOS the subclass carries the tab plumbing and none of the menu: the
+/// platform's context menu is a different API (`UIContextMenuConfiguration`
+/// through the UI delegate) and is a future decision, not a port of this one.
 @MainActor
 class PageView: WKWebView {
     /// Which tab this is. Filled in by `HostedWebView`, which is the only thing
@@ -38,12 +44,15 @@ class PageView: WKWebView {
     var searchEngineName: (@MainActor () -> String?)?
 
     /// What was under the pointer when this gesture started, and the rows the
-    /// core drew for it.
-    ///
-    /// Set before the engine is ever told about the click, which is what makes
-    /// the race impossible rather than unlikely — see `rightMouseDown`.
+    /// core drew for it. Set before the engine is ever told about the click,
+    /// which is what makes the race impossible rather than unlikely — see
+    /// `rightMouseDown`. Stored on the class because an extension cannot hold
+    /// storage; only the macOS menu below ever reads it.
     private var pending: (target: PageTarget, items: [PageMenuItem])?
+}
 
+#if canImport(AppKit)
+extension PageView {
     /// Whether the page had already been read when the engine handed a menu
     /// over. Readable so `PageMenuTests` can assert the ordering the whole
     /// design rests on — it is the one property of this class that a screenshot
@@ -358,3 +367,4 @@ extension NSMenu {
         items.firstIndex { $0.identifier?.rawValue == identifier }
     }
 }
+#endif

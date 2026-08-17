@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
@@ -276,13 +280,22 @@ struct FilePanelRequest: Equatable {
     let directories: Bool
 }
 
+/// The window a panel-having platform would hang its sheet on. Spelled once
+/// so the runner and the presenter agree on it; on iOS the refusing runner
+/// below ignores it, but the shape stays so callers are written once.
+#if canImport(AppKit)
+typealias PanelWindow = NSWindow
+#else
+typealias PanelWindow = UIWindow
+#endif
+
 /// Put a picker in front of somebody and report what came back.
 ///
 /// `nil` is a cancel, and it must arrive: a picker that answers nothing leaves
 /// the page's promise unsettled forever.
 typealias FilePanelRunner = @MainActor (
     FilePanelRequest,
-    NSWindow?,
+    PanelWindow?,
     @escaping @MainActor ([URL]?) -> Void
 ) -> Void
 
@@ -315,6 +328,11 @@ final class FilePanelPresenter {
 
     private let run: FilePanelRunner
 
+    /// The default a host gets. macOS puts the system panel up; iOS answers
+    /// `.cancelled` — this host has no file picker yet (`UIDocumentPicker` is
+    /// UI it has not built), and a cancel is the honest answer because it
+    /// settles the page's promise instead of leaving the control frozen on a
+    /// picker that will never appear.
     init(run: @escaping FilePanelRunner = FilePanelPresenter.systemPanel) {
         self.run = run
     }
@@ -326,7 +344,7 @@ final class FilePanelPresenter {
     /// happens to be in front.
     func present(
         _ dialogs: [PageDialog],
-        window: @escaping @MainActor (TabId) -> NSWindow?,
+        window: @escaping @MainActor (TabId) -> PanelWindow?,
         answer: @escaping @MainActor (UInt64, PageDialogAnswer) -> Void
     ) {
         for dialog in dialogs {
@@ -336,7 +354,7 @@ final class FilePanelPresenter {
 
     private func present(
         _ dialog: PageDialog,
-        window: @escaping @MainActor (TabId) -> NSWindow?,
+        window: @escaping @MainActor (TabId) -> PanelWindow?,
         answer: @escaping @MainActor (UInt64, PageDialogAnswer) -> Void
     ) {
         let allows: (multiple: Bool, directories: Bool)
@@ -369,12 +387,25 @@ final class FilePanelPresenter {
         }
     }
 
+    /// The iOS default: no picker, answered at once. A host that stayed quiet
+    /// would leave `<input type="file">` frozen forever. Spelled
+    /// `systemPanel` too, so the initialiser names one door on both platforms
+    /// and each platform's spelling of it lives beside its own doc.
+    #if !canImport(AppKit)
+    static func systemPanel(
+        _: FilePanelRequest, _: PanelWindow?, answer: @escaping @MainActor ([URL]?) -> Void
+    ) {
+        answer(nil)
+    }
+    #endif
+
     /// The real thing: an `NSOpenPanel` as a sheet on the page's own window.
     ///
     /// **Off this turn of the run loop, on purpose.** The call arrives inside
     /// WebKit's delegate callback with the web process waiting on the far end;
     /// putting an AppKit sheet up from in there is asking one thread to do two
     /// things. A turn later costs a frame nobody can see.
+    #if canImport(AppKit)
     static func systemPanel(
         _ asked: FilePanelRequest,
         window: NSWindow?,
@@ -412,6 +443,7 @@ final class FilePanelPresenter {
             }
         }
     }
+    #endif
 
     /// Whose file this is about to become.
     ///

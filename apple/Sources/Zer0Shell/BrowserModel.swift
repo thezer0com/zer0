@@ -1,4 +1,11 @@
+// The backbone both hosts share. Everything AppKit-specific below is gated
+// behind `canImport(AppKit)`; the UIKit branch stands in only where the
+// platform has a real equivalent (the pasteboard so far).
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import Observation
 import SwiftUI
@@ -306,11 +313,17 @@ public final class BrowserModel {
     /// `storagePath: nil` keeps everything in memory, which is what the tests
     /// use so they never touch a real session.
     init(storagePath: String?) {
-        // The one declaration of what this host can do. True because this
-        // shell is built around `WKWebExtensionController`; the core refuses
-        // what is left out, so a host that grows or loses a runtime says so
-        // here, at the door, and nowhere else (ADR-0117).
-        let capabilities = HostCapabilities(extensionRuntime: true)
+        // The one declaration of what this host can do; the core refuses what
+        // is left out, so a host that grows or loses a runtime says so here,
+        // at the door, and nowhere else (ADR-0118). The split is the SDK's,
+        // not a preference: the macOS shell is built around
+        // `WKWebExtensionController` and `WKWebView.printOperation`, and the
+        // iPhoneOS SDK offers neither.
+        #if canImport(AppKit)
+        let capabilities = HostCapabilities(extensionRuntime: true, pagePrinting: true)
+        #else
+        let capabilities = HostCapabilities(extensionRuntime: false, pagePrinting: false)
+        #endif
         if let storagePath {
             core = Zer0.open(
                 dbPath: storagePath,
@@ -330,7 +343,16 @@ public final class BrowserModel {
         // and description are read from. Getting the locale is the platform's
         // job; the fallback chain when it is absent is the core's.
         core.setUiLocale(locale: Locale.preferredLanguages.first)
+        // macOS reaches the one shared `ConfigHost` through the settings UI
+        // that owns it; iOS has no settings UI yet, so it opens the same file
+        // for itself. Two hosts over one file are two answers to "which
+        // provider answers" — inside one *process* this is the only place
+        // either builds one, so the single-owner rule holds on both platforms.
+        #if canImport(AppKit)
         configuration = ChatSettingsModel.shared.configHost
+        #else
+        configuration = ConfigHost()
+        #endif
         snapshot = core.snapshot()
         siteIcons = SiteIcons(bytes: { [core] space, host in
             core.icon(space: space, host: host)
@@ -355,11 +377,24 @@ public final class BrowserModel {
         // passed, because SwiftUI materialises the window later and gives us no
         // way to hand a value to the view that will host it (ADR-0065).
         engine.openBrowserWindow = { [weak self] window in
+            // The macOS half of "a window arrived": the id is queued for the
+            // `NSWindow` SwiftUI will materialise. iOS has no such registry —
+            // a scene is claimed by its own `WindowGroup` — so only the
+            // counter below runs there.
+            #if canImport(AppKit)
             BrowserWindows.expect(window)
+            #endif
             self?.windowsToOpen += 1
         }
         engine.closeBrowserWindow = { window in
+            // Closing is the platform's gesture: an `NSWindow` closes itself;
+            // iOS has no such object, and how a scene is dismissed there is
+            // the iOS UI's to say when it exists. The core has already
+            // dropped the window by the time this runs — this is only the
+            // screen following.
+            #if canImport(AppKit)
             BrowserWindows.window(for: window)?.close()
+            #endif
         }
 
         // The engine's context menu offers to "Search with Google" whatever
@@ -444,9 +479,13 @@ public final class BrowserModel {
         native.ask = { [weak self] extensionId, host in
             self?.askAboutNativeHost(extensionId: extensionId, host: host)
         }
+        // The pipes are `Process`, which is macOS's; iOS leaves `makeLink`
+        // unset and the host answers "zer0 is not able to start programs."
+        #if canImport(AppKit)
         native.makeLink = { host, extensionId in
             try NativeHostProcess(host: host, extensionId: extensionId)
         }
+        #endif
 
         let store = StoreInstallHost(model: self, hosts: core.extensionStoreHosts())
         storeInstall = store
@@ -1089,7 +1128,7 @@ public final class BrowserModel {
     /// every list that is not a list of tabs: history and the command bar show
     /// what you would get if you opened the page *here*, and here is the only
     /// jar those rows could be talking about.
-    func icon(forHost host: String?, in space: SpaceId? = nil) -> NSImage? {
+    func icon(forHost host: String?, in space: SpaceId? = nil) -> SiteImage? {
         siteIcons.image(
             space: space ?? snapshot.activeSpace,
             host: host,
@@ -1175,6 +1214,15 @@ public final class BrowserModel {
     }
 
     // MARK: - Command bar
+
+    /// The address as the core spells it for a field to edit: what ⌘L seeds
+    /// the macOS palette with, and what the iPhone host's permanent field
+    /// shows between edits. Both hosts read it from here rather than
+    /// re-deriving it, because "the address, for editing" (scheme elided,
+    /// blank tab, and the rest) is the core's sentence to spell.
+    func addressBarText(of tab: BrowserTab) -> String {
+        core.addressBarText(tab: tab.id)
+    }
 
     func openCommandBar(intent: CommandBarIntent) {
         // Two floating panels answering two different questions at once is one
@@ -1371,6 +1419,11 @@ public final class BrowserModel {
     /// whatever the core makes of it. Nothing on this side rearranges a list
     /// locally and hopes the core agrees — that is how rows snap back to where
     /// they were half a second after the drop.
+    ///
+    /// macOS-only: `TabDropSlot` is the sidebar's drag-and-drop furniture, and
+    /// a reorder that arrives by some other gesture on another platform is a
+    /// different question with its own answer.
+    #if canImport(AppKit)
     func drop(_ tab: TabId, into slot: TabDropSlot) {
         send(.moveTabToGroup(
             tab: tab,
@@ -1379,6 +1432,7 @@ public final class BrowserModel {
             before: slot.before
         ))
     }
+    #endif
 
     public func goBack() {
         guard let tab = snapshot.activeTab else { return }
@@ -1398,8 +1452,7 @@ public final class BrowserModel {
     /// Copy a specific tab's address.
     public func copyURL(of tab: TabId) {
         guard let url = snapshot.tabs.first(where: { $0.id == tab })?.url else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url, forType: .string)
+        copy(url)
     }
 
     /// With no address bar on screen, copying the URL needs its own way out.
@@ -1409,8 +1462,15 @@ public final class BrowserModel {
     }
 
     func copy(_ text: String) {
+        #if canImport(AppKit)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        #else
+        // One replacing assignment rather than clear + set: `UIPasteboard`'s
+        // `string` setter is the same promise the AppKit pair makes, and the
+        // platform offers no types to clear.
+        UIPasteboard.general.string = text
+        #endif
     }
 
     // MARK: - Spaces
@@ -1579,6 +1639,13 @@ public final class BrowserModel {
     /// click before any SwiftUI gesture sees it. Comparing the view the window
     /// says it hit against the view the engine is hosting cannot disagree with
     /// what is on screen the way two sets of coordinates could.
+    ///
+    /// macOS only, and structurally so: the hit-test walks an `NSView` tree
+    /// because on a Mac a click must *move* the keyboard to the pane it lands
+    /// in. On iOS focus follows the last touch, and spelling that rule is the
+    /// iOS UI's to do when it exists — so the method is absent there rather
+    /// than a guess standing in for it.
+    #if canImport(AppKit)
     func pane(containing view: NSView) -> TabId? {
         guard let split = activeSplit else { return nil }
 
@@ -1592,7 +1659,13 @@ public final class BrowserModel {
         }
         return nil
     }
+    #endif
 
+    // The chord path is AppKit's end to end: `NSEvent` modifier flags, a local
+    // key monitor, and menu key equivalents have no iOS counterpart. A
+    // hardware keyboard there arrives as `UIKeyCommand`s — a different seam,
+    // for the iOS UI to build when it exists, not one to improvise here.
+    #if canImport(AppKit)
     // MARK: - The keyboard
 
     /// What a key press means, or `nil` to let it through untouched.
@@ -1704,6 +1777,7 @@ public final class BrowserModel {
         guard let tab = activeTab, !tab.loadingComplete else { return nil }
         return .stopLoading
     }
+    #endif
 
     // MARK: - Commands
 
@@ -2043,6 +2117,11 @@ public final class BrowserModel {
     /// Inspect Element item is deliberately not promised here — it comes from
     /// the same private preference that may well have gone with the class.
     private func reportInspectorUnavailable() {
+        // The whole dev-tools path is a macOS WebKit story (ADR-0067's private
+        // `_WKInspector`), so the alert is too. On iOS the toggle is not
+        // offered until the engine grows one; an "unavailable" report there
+        // would be a sentence about a feature no screen can reach.
+        #if canImport(AppKit)
         let alert = NSAlert()
         alert.messageText = "This version of WebKit cannot open the Web Inspector."
         alert.informativeText = """
@@ -2051,6 +2130,7 @@ public final class BrowserModel {
             """
         alert.addButton(withTitle: "OK")
         alert.runModal()
+        #endif
     }
 
     /// ⇧⌘K, and the menu item beside it: turn blocking off for this site, or
@@ -2067,7 +2147,13 @@ public final class BrowserModel {
             // URL, an error page that never committed. Refusing is the honest
             // answer; recording an exception against nothing would put a row
             // in Settings that exempts no page at all.
+            //
+            // The beep is AppKit's. What a refused press feels like on iOS
+            // (haptics, a shake, nothing) belongs to the iOS UI, not to a
+            // guess here.
+            #if canImport(AppKit)
             NSSound.beep()
+            #endif
             return
         }
         core.setBlocking(host: host, blocking: !blocksCurrentPage)

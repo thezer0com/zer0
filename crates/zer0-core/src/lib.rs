@@ -200,7 +200,9 @@ pub use preferences::{
 };
 #[cfg(feature = "prose")]
 pub use prose::{ProseBlock, ProseKind, ProseRun, blocks as prose_blocks_of};
-pub use protocol::{Action, ChatSubject, EngineCommand, ReplyStop, WindowContents};
+pub use protocol::{
+    Action, ChatSubject, EngineCommand, HostCapabilities, ReplyStop, WindowContents,
+};
 pub use reducer::{dispatch, rehydrate};
 pub use routing::{Route, RoutePattern, RoutingTable};
 pub use session::Session;

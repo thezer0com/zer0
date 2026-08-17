@@ -1,17 +1,6 @@
 import SwiftUI
 import Zer0Core
 
-/// A page's question, waiting on an answer.
-///
-/// `PageDialog` comes from the core and carries no identity, which
-/// `.sheet(item:)` needs. The request number is the identity: it is monotonic
-/// and never reused, so a sheet cannot be recycled for the next question and
-/// carry the last one's words for a frame.
-struct PendingPageDialog: Identifiable {
-    let dialog: PageDialog
-    var id: UInt64 { dialog.request }
-}
-
 /// The page's own string, drawn so it cannot be mistaken for the browser's.
 ///
 /// **This is the only path a site's words take to the screen**, and that is the

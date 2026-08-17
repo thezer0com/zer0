@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import CryptoKit
 import Foundation
 import SwiftUI
@@ -38,7 +42,7 @@ struct SiteBadge: View {
         /// The icon is passed in rather than looked up so this view stays
         /// drawable on its own, which is what lets it be rendered offscreen and
         /// looked at.
-        case site(host: String?, icon: NSImage?)
+        case site(host: String?, icon: SiteImage?)
         /// One of the browser's own pages, which wears the browser's own mark.
         ///
         /// `zer0://history` is not a site: there is nobody to ask for an icon
@@ -62,7 +66,15 @@ struct SiteBadge: View {
                 // a handful of sites serve something that is not square, and
                 // squashing a wordmark to fill a box is worse than leaving air
                 // beside it.
-                Image(nsImage: icon)
+                //
+                // Only the constructor is platform's; the whole dressing after
+                // it is SwiftUI's on both hosts, so it is stated once.
+                #if canImport(AppKit)
+                let picture = Image(nsImage: icon)
+                #else
+                let picture = Image(uiImage: icon)
+                #endif
+                picture
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
@@ -87,7 +99,7 @@ struct SiteBadge: View {
         }
     }
 
-    private var icon: NSImage? {
+    private var icon: SiteImage? {
         switch subject {
         case let .site(_, icon): icon
         case .zer0: nil

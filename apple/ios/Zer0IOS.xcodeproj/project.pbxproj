@@ -1,0 +1,480 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	objectVersion = 77;
+	classes = {
+	};
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4F00000000000000000000F1 /* Zer0Core.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F00000000000000000000E1 /* Zer0Core.xcframework */; };
+		4F00000000000000000000F2 /* zer0_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F00000000000000000000E2 /* zer0_core.swift */; };
+		4F00000000000000000000F4 /* Zer0Core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4F00000000000000000000E4 /* Zer0Core.a */; };
+		4F0000000000000000000B01 /* AuthChallengeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A01 /* AuthChallengeHost.swift */; };
+		4F0000000000000000000B02 /* BrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A02 /* BrowserModel.swift */; };
+		4F0000000000000000000B03 /* BrowserTabFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A03 /* BrowserTabFields.swift */; };
+		4F0000000000000000000B04 /* ChatConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A04 /* ChatConfiguration.swift */; };
+		4F0000000000000000000B05 /* ChatHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A05 /* ChatHost.swift */; };
+		4F0000000000000000000B06 /* ChatProse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A06 /* ChatProse.swift */; };
+		4F0000000000000000000B07 /* ChatProviderHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A07 /* ChatProviderHost.swift */; };
+		4F0000000000000000000B08 /* ConfigHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A08 /* ConfigHost.swift */; };
+		4F0000000000000000000B09 /* ConfiguredChatHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A09 /* ConfiguredChatHost.swift */; };
+		4F0000000000000000000B0A /* ConfigVocabulary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0A /* ConfigVocabulary.swift */; };
+		4F0000000000000000000B0B /* ContentBlocking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0B /* ContentBlocking.swift */; };
+		4F0000000000000000000B0C /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0C /* DesignSystem.swift */; };
+		4F0000000000000000000B0D /* DownloadHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0D /* DownloadHost.swift */; };
+		4F0000000000000000000B0E /* EngineHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0E /* EngineHost.swift */; };
+		4F0000000000000000000B0F /* EnginePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A0F /* EnginePolicy.swift */; };
+		4F0000000000000000000B10 /* ExtensionApiHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A10 /* ExtensionApiHost.swift */; };
+		4F0000000000000000000B11 /* ExtensionHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A11 /* ExtensionHost.swift */; };
+		4F0000000000000000000B12 /* ExtensionPopupDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */; };
+		4F0000000000000000000B13 /* ExternalScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A13 /* ExternalScheme.swift */; };
+		4F0000000000000000000B14 /* LucideIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A14 /* LucideIcon.swift */; };
+		4F0000000000000000000B15 /* McpHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A15 /* McpHost.swift */; };
+		4F0000000000000000000B16 /* McpHttpLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A16 /* McpHttpLink.swift */; };
+		4F0000000000000000000B17 /* NativeMessagingHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A17 /* NativeMessagingHost.swift */; };
+		4F0000000000000000000B18 /* PageActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A18 /* PageActions.swift */; };
+		4F0000000000000000000B19 /* PageDialogHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A19 /* PageDialogHost.swift */; };
+		4F0000000000000000000B1A /* PageMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1A /* PageMenu.swift */; };
+		4F0000000000000000000B1B /* PageProcessHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1B /* PageProcessHost.swift */; };
+		4F0000000000000000000B1C /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1C /* Palette.swift */; };
+		4F0000000000000000000B1D /* PaletteProposals.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1D /* PaletteProposals.swift */; };
+		4F0000000000000000000B1E /* PasswordHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1E /* PasswordHost.swift */; };
+		4F0000000000000000000B1F /* PasswordStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A1F /* PasswordStore.swift */; };
+		4F0000000000000000000B20 /* PendingPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A20 /* PendingPrompts.swift */; };
+		4F0000000000000000000B21 /* PopupHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A21 /* PopupHost.swift */; };
+		4F0000000000000000000B22 /* SecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A22 /* SecretStore.swift */; };
+		4F0000000000000000000B23 /* SessionLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A23 /* SessionLifecycle.swift */; };
+		4F0000000000000000000B24 /* SettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A24 /* SettingsSection.swift */; };
+		4F0000000000000000000B25 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A25 /* Shortcuts.swift */; };
+		4F0000000000000000000B26 /* SiteBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A26 /* SiteBadge.swift */; };
+		4F0000000000000000000B27 /* SiteIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A27 /* SiteIcons.swift */; };
+		4F0000000000000000000B28 /* SitePermissionHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A28 /* SitePermissionHost.swift */; };
+		4F0000000000000000000B29 /* SplitFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A29 /* SplitFields.swift */; };
+		4F0000000000000000000B2A /* StoreInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A2A /* StoreInstall.swift */; };
+		4F0000000000000000000B2B /* WebInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A2B /* WebInspector.swift */; };
+		4F0000000000000000000B2C /* WindowRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A2C /* WindowRole.swift */; };
+		4F0000000000000000000B2D /* Zer0Mark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A2D /* Zer0Mark.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4F00000000000000000000E1 /* Zer0Core.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Zer0Core.xcframework; sourceTree = "<group>"; };
+		4F00000000000000000000E2 /* zer0_core.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = zer0_core.swift; path = ../Sources/Zer0Core/zer0_core.swift; sourceTree = "<group>"; };
+		4F00000000000000000000E3 /* Zer0IOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zer0IOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F00000000000000000000E4 /* Zer0Core.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = Zer0Core.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F0000000000000000000A01 /* AuthChallengeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AuthChallengeHost.swift; path = ../Sources/Zer0Shell/AuthChallengeHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A02 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrowserModel.swift; path = ../Sources/Zer0Shell/BrowserModel.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A03 /* BrowserTabFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrowserTabFields.swift; path = ../Sources/Zer0Shell/BrowserTabFields.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A04 /* ChatConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatConfiguration.swift; path = ../Sources/Zer0Shell/ChatConfiguration.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A05 /* ChatHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatHost.swift; path = ../Sources/Zer0Shell/ChatHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A06 /* ChatProse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatProse.swift; path = ../Sources/Zer0Shell/ChatProse.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A07 /* ChatProviderHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChatProviderHost.swift; path = ../Sources/Zer0Shell/ChatProviderHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A08 /* ConfigHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigHost.swift; path = ../Sources/Zer0Shell/ConfigHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A09 /* ConfiguredChatHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfiguredChatHost.swift; path = ../Sources/Zer0Shell/ConfiguredChatHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0A /* ConfigVocabulary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConfigVocabulary.swift; path = ../Sources/Zer0Shell/ConfigVocabulary.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0B /* ContentBlocking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentBlocking.swift; path = ../Sources/Zer0Shell/ContentBlocking.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0C /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DesignSystem.swift; path = ../Sources/Zer0Shell/DesignSystem.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0D /* DownloadHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DownloadHost.swift; path = ../Sources/Zer0Shell/DownloadHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0E /* EngineHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EngineHost.swift; path = ../Sources/Zer0Shell/EngineHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A0F /* EnginePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EnginePolicy.swift; path = ../Sources/Zer0Shell/EnginePolicy.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A10 /* ExtensionApiHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExtensionApiHost.swift; path = ../Sources/Zer0Shell/ExtensionApiHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A11 /* ExtensionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExtensionHost.swift; path = ../Sources/Zer0Shell/ExtensionHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExtensionPopupDialogs.swift; path = ../Sources/Zer0Shell/ExtensionPopupDialogs.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A13 /* ExternalScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExternalScheme.swift; path = ../Sources/Zer0Shell/ExternalScheme.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A14 /* LucideIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucideIcon.swift; path = ../Sources/Zer0Shell/LucideIcon.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A15 /* McpHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = McpHost.swift; path = ../Sources/Zer0Shell/McpHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A16 /* McpHttpLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = McpHttpLink.swift; path = ../Sources/Zer0Shell/McpHttpLink.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A17 /* NativeMessagingHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NativeMessagingHost.swift; path = ../Sources/Zer0Shell/NativeMessagingHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A18 /* PageActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageActions.swift; path = ../Sources/Zer0Shell/PageActions.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A19 /* PageDialogHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageDialogHost.swift; path = ../Sources/Zer0Shell/PageDialogHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1A /* PageMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageMenu.swift; path = ../Sources/Zer0Shell/PageMenu.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1B /* PageProcessHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageProcessHost.swift; path = ../Sources/Zer0Shell/PageProcessHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1C /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Palette.swift; path = ../Sources/Zer0Shell/Palette.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1D /* PaletteProposals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaletteProposals.swift; path = ../Sources/Zer0Shell/PaletteProposals.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1E /* PasswordHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PasswordHost.swift; path = ../Sources/Zer0Shell/PasswordHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A1F /* PasswordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PasswordStore.swift; path = ../Sources/Zer0Shell/PasswordStore.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A20 /* PendingPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PendingPrompts.swift; path = ../Sources/Zer0Shell/PendingPrompts.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A21 /* PopupHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PopupHost.swift; path = ../Sources/Zer0Shell/PopupHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A22 /* SecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecretStore.swift; path = ../Sources/Zer0Shell/SecretStore.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A23 /* SessionLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SessionLifecycle.swift; path = ../Sources/Zer0Shell/SessionLifecycle.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A24 /* SettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsSection.swift; path = ../Sources/Zer0Shell/SettingsSection.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A25 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Shortcuts.swift; path = ../Sources/Zer0Shell/Shortcuts.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A26 /* SiteBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SiteBadge.swift; path = ../Sources/Zer0Shell/SiteBadge.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A27 /* SiteIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SiteIcons.swift; path = ../Sources/Zer0Shell/SiteIcons.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A28 /* SitePermissionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SitePermissionHost.swift; path = ../Sources/Zer0Shell/SitePermissionHost.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A29 /* SplitFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SplitFields.swift; path = ../Sources/Zer0Shell/SplitFields.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A2A /* StoreInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoreInstall.swift; path = ../Sources/Zer0Shell/StoreInstall.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A2B /* WebInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WebInspector.swift; path = ../Sources/Zer0Shell/WebInspector.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A2C /* WindowRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WindowRole.swift; path = ../Sources/Zer0Shell/WindowRole.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A2D /* Zer0Mark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Zer0Mark.swift; path = ../Sources/Zer0Shell/Zer0Mark.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4F00000000000000000000D1 /* Zer0IOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Zer0IOS;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		4F00000000000000000000X1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F00000000000000000000A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4F00000000000000000000B2;
+			remoteInfo = Zer0Core;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4F00000000000000000000C2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F00000000000000000000F1 /* Zer0Core.xcframework in Frameworks */,
+				4F00000000000000000000F4 /* Zer0Core.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4F0000000000000000000D2 /* Zer0Shell */ = {
+			isa = PBXGroup;
+			children = (
+				4F0000000000000000000A01 /* AuthChallengeHost.swift */,
+				4F0000000000000000000A02 /* BrowserModel.swift */,
+				4F0000000000000000000A03 /* BrowserTabFields.swift */,
+				4F0000000000000000000A04 /* ChatConfiguration.swift */,
+				4F0000000000000000000A05 /* ChatHost.swift */,
+				4F0000000000000000000A06 /* ChatProse.swift */,
+				4F0000000000000000000A07 /* ChatProviderHost.swift */,
+				4F0000000000000000000A08 /* ConfigHost.swift */,
+				4F0000000000000000000A09 /* ConfiguredChatHost.swift */,
+				4F0000000000000000000A0A /* ConfigVocabulary.swift */,
+				4F0000000000000000000A0B /* ContentBlocking.swift */,
+				4F0000000000000000000A0C /* DesignSystem.swift */,
+				4F0000000000000000000A0D /* DownloadHost.swift */,
+				4F0000000000000000000A0E /* EngineHost.swift */,
+				4F0000000000000000000A0F /* EnginePolicy.swift */,
+				4F0000000000000000000A10 /* ExtensionApiHost.swift */,
+				4F0000000000000000000A11 /* ExtensionHost.swift */,
+				4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */,
+				4F0000000000000000000A13 /* ExternalScheme.swift */,
+				4F0000000000000000000A14 /* LucideIcon.swift */,
+				4F0000000000000000000A15 /* McpHost.swift */,
+				4F0000000000000000000A16 /* McpHttpLink.swift */,
+				4F0000000000000000000A17 /* NativeMessagingHost.swift */,
+				4F0000000000000000000A18 /* PageActions.swift */,
+				4F0000000000000000000A19 /* PageDialogHost.swift */,
+				4F0000000000000000000A1A /* PageMenu.swift */,
+				4F0000000000000000000A1B /* PageProcessHost.swift */,
+				4F0000000000000000000A1C /* Palette.swift */,
+				4F0000000000000000000A1D /* PaletteProposals.swift */,
+				4F0000000000000000000A1E /* PasswordHost.swift */,
+				4F0000000000000000000A1F /* PasswordStore.swift */,
+				4F0000000000000000000A20 /* PendingPrompts.swift */,
+				4F0000000000000000000A21 /* PopupHost.swift */,
+				4F0000000000000000000A22 /* SecretStore.swift */,
+				4F0000000000000000000A23 /* SessionLifecycle.swift */,
+				4F0000000000000000000A24 /* SettingsSection.swift */,
+				4F0000000000000000000A25 /* Shortcuts.swift */,
+				4F0000000000000000000A26 /* SiteBadge.swift */,
+				4F0000000000000000000A27 /* SiteIcons.swift */,
+				4F0000000000000000000A28 /* SitePermissionHost.swift */,
+				4F0000000000000000000A29 /* SplitFields.swift */,
+				4F0000000000000000000A2A /* StoreInstall.swift */,
+				4F0000000000000000000A2B /* WebInspector.swift */,
+				4F0000000000000000000A2C /* WindowRole.swift */,
+				4F0000000000000000000A2D /* Zer0Mark.swift */,
+			);
+			name = Zer0Shell;
+			sourceTree = "<group>";
+		};
+		4F00000000000000000000A2 = {
+			isa = PBXGroup;
+			children = (
+				4F00000000000000000000D1 /* Zer0IOS */,
+				4F0000000000000000000D2 /* Zer0Shell */,
+				4F00000000000000000000E1 /* Zer0Core.xcframework */,
+				4F00000000000000000000E2 /* zer0_core.swift */,
+				4F00000000000000000000A3 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4F00000000000000000000A3 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4F00000000000000000000E3 /* Zer0IOS.app */,
+				4F00000000000000000000E4 /* Zer0Core.a */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4F00000000000000000000B1 /* Zer0IOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4F0000000000000000000020 /* Build configuration list for PBXNativeTarget "Zer0IOS" */;
+			buildPhases = (
+				4F00000000000000000000C1 /* Sources */,
+				4F00000000000000000000C2 /* Frameworks */,
+				4F00000000000000000000C3 /* Resources */,
+			);
+			dependencies = (
+				4F00000000000000000000X2 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4F00000000000000000000D1 /* Zer0IOS */,
+			);
+			name = Zer0IOS;
+			packageProductDependencies = (
+			);
+			productName = Zer0IOS;
+			productReference = 4F00000000000000000000E3 /* Zer0IOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4F00000000000000000000B2 /* Zer0Core */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4F0000000000000000000030 /* Build configuration list for PBXNativeTarget "Zer0Core" */;
+			buildPhases = (
+				4F00000000000000000000C4 /* Sources */,
+			);
+			dependencies = (
+			);
+			name = Zer0Core;
+			packageProductDependencies = (
+			);
+			productName = Zer0Core;
+			productReference = 4F00000000000000000000E4 /* Zer0Core.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4F00000000000000000000A1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+			};
+			buildConfigurationList = 4F0000000000000000000010 /* Build configuration list for PBXProject "Zer0IOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4F00000000000000000000A2;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4F00000000000000000000A3 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4F00000000000000000000B1 /* Zer0IOS */,
+				4F00000000000000000000B2 /* Zer0Core */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4F00000000000000000000C3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4F00000000000000000000C1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F0000000000000000000B01 /* AuthChallengeHost.swift in Sources */,
+				4F0000000000000000000B02 /* BrowserModel.swift in Sources */,
+				4F0000000000000000000B03 /* BrowserTabFields.swift in Sources */,
+				4F0000000000000000000B04 /* ChatConfiguration.swift in Sources */,
+				4F0000000000000000000B05 /* ChatHost.swift in Sources */,
+				4F0000000000000000000B06 /* ChatProse.swift in Sources */,
+				4F0000000000000000000B07 /* ChatProviderHost.swift in Sources */,
+				4F0000000000000000000B08 /* ConfigHost.swift in Sources */,
+				4F0000000000000000000B09 /* ConfiguredChatHost.swift in Sources */,
+				4F0000000000000000000B0A /* ConfigVocabulary.swift in Sources */,
+				4F0000000000000000000B0B /* ContentBlocking.swift in Sources */,
+				4F0000000000000000000B0C /* DesignSystem.swift in Sources */,
+				4F0000000000000000000B0D /* DownloadHost.swift in Sources */,
+				4F0000000000000000000B0E /* EngineHost.swift in Sources */,
+				4F0000000000000000000B0F /* EnginePolicy.swift in Sources */,
+				4F0000000000000000000B10 /* ExtensionApiHost.swift in Sources */,
+				4F0000000000000000000B11 /* ExtensionHost.swift in Sources */,
+				4F0000000000000000000B12 /* ExtensionPopupDialogs.swift in Sources */,
+				4F0000000000000000000B13 /* ExternalScheme.swift in Sources */,
+				4F0000000000000000000B14 /* LucideIcon.swift in Sources */,
+				4F0000000000000000000B15 /* McpHost.swift in Sources */,
+				4F0000000000000000000B16 /* McpHttpLink.swift in Sources */,
+				4F0000000000000000000B17 /* NativeMessagingHost.swift in Sources */,
+				4F0000000000000000000B18 /* PageActions.swift in Sources */,
+				4F0000000000000000000B19 /* PageDialogHost.swift in Sources */,
+				4F0000000000000000000B1A /* PageMenu.swift in Sources */,
+				4F0000000000000000000B1B /* PageProcessHost.swift in Sources */,
+				4F0000000000000000000B1C /* Palette.swift in Sources */,
+				4F0000000000000000000B1D /* PaletteProposals.swift in Sources */,
+				4F0000000000000000000B1E /* PasswordHost.swift in Sources */,
+				4F0000000000000000000B1F /* PasswordStore.swift in Sources */,
+				4F0000000000000000000B20 /* PendingPrompts.swift in Sources */,
+				4F0000000000000000000B21 /* PopupHost.swift in Sources */,
+				4F0000000000000000000B22 /* SecretStore.swift in Sources */,
+				4F0000000000000000000B23 /* SessionLifecycle.swift in Sources */,
+				4F0000000000000000000B24 /* SettingsSection.swift in Sources */,
+				4F0000000000000000000B25 /* Shortcuts.swift in Sources */,
+				4F0000000000000000000B26 /* SiteBadge.swift in Sources */,
+				4F0000000000000000000B27 /* SiteIcons.swift in Sources */,
+				4F0000000000000000000B28 /* SitePermissionHost.swift in Sources */,
+				4F0000000000000000000B29 /* SplitFields.swift in Sources */,
+				4F0000000000000000000B2A /* StoreInstall.swift in Sources */,
+				4F0000000000000000000B2B /* WebInspector.swift in Sources */,
+				4F0000000000000000000B2C /* WindowRole.swift in Sources */,
+				4F0000000000000000000B2D /* Zer0Mark.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4F00000000000000000000C4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F00000000000000000000F2 /* zer0_core.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4F00000000000000000000X2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4F00000000000000000000B2 /* Zer0Core */;
+			targetProxy = 4F00000000000000000000X1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4F0000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		4F0000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		4F0000000000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thezer0.browser.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Sources/Zer0CoreFFI";
+				OTHER_SWIFT_FLAGS = "-warnings-as-errors";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4F0000000000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thezer0.browser.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Sources/Zer0CoreFFI";
+				OTHER_SWIFT_FLAGS = "-warnings-as-errors";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		4F0000000000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				PRODUCT_NAME = Zer0Core;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Sources/Zer0CoreFFI";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4F0000000000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
+				PRODUCT_NAME = Zer0Core;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/../Sources/Zer0CoreFFI";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4F0000000000000000000010 /* Build configuration list for PBXProject "Zer0IOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4F0000000000000000000011 /* Debug */,
+				4F0000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4F0000000000000000000020 /* Build configuration list for PBXNativeTarget "Zer0IOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4F0000000000000000000021 /* Debug */,
+				4F0000000000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4F0000000000000000000030 /* Build configuration list for PBXNativeTarget "Zer0Core" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4F0000000000000000000031 /* Debug */,
+				4F0000000000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4F00000000000000000000A1 /* Project object */;
+}

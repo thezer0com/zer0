@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-16
-- **Lock:** `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_no_extension_runtime_is_refused_installation`, `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_an_extension_runtime_installs`
+- **Lock:** `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_no_extension_runtime_is_refused_installation`, `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_an_extension_runtime_installs`, `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_no_page_printing_answers_no_print_chord`, `crates/zer0-core/src/ffi_tests.rs::a_host_that_declared_page_printing_answers_the_print_chord`
 
 ## Context
 
@@ -26,8 +26,12 @@ unimplemented surface is enumerated, not discovered. ADR-0103: a *cannot* that
 is really ours is **answered with a reason** rather than stated, and never
 wearing silence. This decision is those two rules applied to the host boundary.
 
-Why one capability and not a list: `extension_runtime` is the only capability
-with a consumer in the code today. Nothing else branches on what the host can
+Why one capability at a time and not a list: `extension_runtime` was the only
+capability with a consumer in the code when this record was written. The
+second consumer arrived with iOS — `WKWebView` has no public print API there
+(`printOperation` is `macos(11.0)`-only in the iPhoneOS 26.5 SDK, measured),
+so a page menu chord that cannot be honoured became a field the day the host
+that cannot honour it did. Nothing else branches on what the host can
 do — native messaging has its own door (`set_application_support_directory`,
 refusing everything until set, ADR-0105), and it already works the way this
 record generalises.
@@ -48,21 +52,25 @@ host reports facts — carried by both constructors, `Zer0::open` and
   discovery ADR-0086 exists to stop. A parameter makes forgetting a **compile
   error on every host**, the same day, at the place the host is being built.
 
-The record is one field wide:
+The record is two fields wide:
 
-- `extension_runtime: bool` — because `install_extension` is the one consumer.
+- `extension_runtime: bool` — because `install_extension` is the consumer.
   A field with no consumer is a switch that changes nothing: the drift ADR-0103
   names for `ZER0_PROVIDES`, wearing a struct. A capability joins the record in
   the same commit as the behaviour that asks about it, or not at all. This is
   the growth rule, and it is the reason there is no `data_stores`, no
   `native_messaging`, no `notifications` field here today — each arrives with
   its consumer or arrives as a dead number.
+- `page_printing: bool` — because the keymap is the consumer. This is the
+  growth rule exercised once: the field arrived in the same change as the
+  retirement that reads it, when the iOS host (ADR-0121) brought the first
+  shell that cannot honour a print chord.
 
 `Default` is not derived, on purpose. `..Default::default()` would let a new
 field arrive already answered, and the whole point of the type is that every
 host says every field out loud.
 
-### The one enforcement: `install_extension`
+### The first enforcement: `install_extension`
 
 When `extension_runtime` is false, the call refuses **before anything touches
 the disk** — no directory is created, no bytes are parsed, `installed_extensions`
@@ -81,6 +89,32 @@ Reads stay ungated. A host without a runtime can still ask where the store
 lives, what a package would request, and can uninstall: those are questions and
 removals, not runs. The macOS shell declares `extension_runtime: true` at both
 doors (`BrowserModel.init`), in the one place the shell states what it is.
+
+### The second enforcement: the print chord
+
+When `page_printing` is false, `UiCommand::PrintPage` is **retired from the
+keymap at every mint** — both constructors (after any stored session was
+loaded, so a custom binding saved on a host that can print cannot survive the
+trip) and `reset_keymap`, which mints the defaults again. Retired rather than
+guarded at the answer doors, because one binding list feeds the press door
+(`command_for_chord`), the menus (`keymap()`) and the Settings screen alike: a
+binding that exists but answers nothing is a row Settings can still offer and
+a menu can still advertise, and both are roads to a print panel the host
+cannot put up — the affordance lie ADR-0018 refuses, in a second spelling.
+
+The menu *row* is the shell's to draw and place — ADR-0091's split, the core
+decides the amendment and the host places it — and the macOS shell draws it
+because macOS declares `true` (`WKWebView.printOperation` is the act, and it
+is macOS's). A host that cannot print draws no row because the core hands it
+no chord to wear and no press that answers.
+
+`window.print()` is deliberately **not** gated here. It reaches the core as
+`Action::PageAskedToPrint` only through the script channel the host shell
+injects (ADR-0101) — a host that cannot print never attaches the channel,
+which is ADR-0105's door shape: an optional fact whose door stays the host's.
+The day an engine-owning host shares that injection code, the `dispatch` door
+needs the capability check; that is the revisit below, not a gate built now
+for a door nobody knocks on.
 
 ## Consequences
 
@@ -134,7 +168,17 @@ and asserts the row exists afterwards.
 **"A second field arrives with no consumer."** No test can catch a dead field —
 the compiler is happy, the record just grows. The fence is this record's growth
 rule, the same way ADR-0116's budget cannot stop a constant being edited. A
-field nobody reads is a number somebody believes.
+field nobody reads is a number somebody believes. `page_printing` has since
+been the honest case: it arrived retired-together with the keymap gate that
+reads it, in the change that brought the host that needed it.
+
+**"`reset_keymap` is tidied back to a one-liner."** The retirement reads like
+it belongs to the constructors, and a reset that resurrected the print chord
+would pass every macOS test — mac declares `true`, so nothing there changes.
+`a_host_that_declared_no_page_printing_answers_no_print_chord` asks again
+after the reset, and both halves were watched: the gate broken on purpose went
+red on the first assertion (`Some(PrintPage)` where the host said none), and
+green again restored.
 
 **"The check moves to the call site that complained."** Someone hits the
 refusal during bring-up, finds the gate in `ffi.rs`, and adds a parameter or a
@@ -150,9 +194,18 @@ which is cheaper than the bypass and reviewable in one place.
   a claim about a real product rather than a placeholder — re-measure it
   against a real screen.
 - **When a second capability gains a consumer.** The field joins the record in
-  the same commit as the behaviour that consults it. If two arrive close
-  together, check whether the consumer is really the core's question or the
-  host's — ADR-0105's door is the shape for facts that stay optional.
+  the same commit as the behaviour that consults it — `page_printing` has now
+  been that second arrival, and the shape held: one field, one consumer, one
+  gate at the mint. If another arrives close behind, check whether the consumer
+  is really the core's question or the host's — ADR-0105's door is the shape
+  for facts that stay optional.
+- **When an engine-owning host without a print API exists.** iOS with a
+  `WKWebView` is the first. `window.print()` reaches the core only through the
+  channel a host injects (ADR-0101), and a shared engine host that attaches it
+  everywhere would be a page asking a host that cannot answer — that is the
+  moment the `dispatch` door needs the capability check the second enforcement
+  deliberately left to the injection. The chord gate above stays either way;
+  this revisit is about the page's door, not the person's.
 - **When a capability needs to be more than a bool** — versioned runtimes,
   partial support, "background workers but no popups". A richer field is a new
   decision about what the core is allowed to refuse on, not a refactor.
