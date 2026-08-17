@@ -96,8 +96,8 @@ struct LucideIconTests {
         // The lens is a closed loop with its centre inside it, and the
         // handle is a second subpath leaving from the far corner.
         let search = LucideIcon.search.drawing
-        #expect(search.contains(CGPoint(x: 11, y: 11), eoFill: true))
-        #expect(!search.contains(CGPoint(x: 11, y: 20), eoFill: true))
+        #expect(inside(CGPoint(x: 11, y: 11), of: search))
+        #expect(!inside(CGPoint(x: 11, y: 20), of: search))
         #expect(subpathStarts(of: search).last == CGPoint(x: 21, y: 21))
     }
 
@@ -206,6 +206,75 @@ struct LucideIconTests {
         }
         close()
         return centres
+    }
+
+    /// Whether the path's fill covers a point, computed here rather than
+    /// asked of `Path.contains`: measured on the CI's macOS 15 runner, that
+    /// API answers false for every point of the lens drawing — centre
+    /// included — while macOS 26 answers the centre true. Rendering fills
+    /// through a different door than that hit-test, so what moved between
+    /// systems is the API's answer, not the ink. Each subpath is flattened
+    /// (curves sampled sixteen times) and the point decided by even-odd
+    /// crossings of a rightward ray: the same claim `eoFill:` was making,
+    /// holding on every macOS the 15.4 floor admits.
+    private func inside(_ point: CGPoint, of path: Path) -> Bool {
+        var crossings = 0
+        var ring: [CGPoint] = []
+        var pen = CGPoint.zero
+
+        func closeRing() {
+            guard ring.count > 2 else {
+                ring = []
+                return
+            }
+            for i in ring.indices {
+                let a = ring[i]
+                let b = ring[(i + 1) % ring.count]
+                if (a.y > point.y) != (b.y > point.y) {
+                    let x = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
+                    if x > point.x { crossings += 1 }
+                }
+            }
+            ring = []
+        }
+
+        path.forEach { element in
+            switch element {
+            case .move(to: let p):
+                closeRing()
+                ring = [p]
+                pen = p
+            case .line(to: let p):
+                ring.append(p)
+                pen = p
+            case .quadCurve(to: let end, control: let c):
+                for i in 1...16 {
+                    let t = CGFloat(i) / 16
+                    let u = 1 - t
+                    ring.append(CGPoint(
+                        x: u * u * pen.x + 2 * u * t * c.x + t * t * end.x,
+                        y: u * u * pen.y + 2 * u * t * c.y + t * t * end.y
+                    ))
+                }
+                pen = end
+            case .curve(to: let end, control1: let c1, control2: let c2):
+                for i in 1...16 {
+                    let t = CGFloat(i) / 16
+                    let u = 1 - t
+                    ring.append(CGPoint(
+                        x: u * u * u * pen.x + 3 * u * u * t * c1.x
+                            + 3 * u * t * t * c2.x + t * t * t * end.x,
+                        y: u * u * u * pen.y + 3 * u * u * t * c1.y
+                            + 3 * u * t * t * c2.y + t * t * t * end.y
+                    ))
+                }
+                pen = end
+            case .closeSubpath:
+                closeRing()
+            }
+        }
+        closeRing()
+        return crossings % 2 == 1
     }
 
     private func matches(_ a: CGRect, _ b: CGRect) -> Bool {
