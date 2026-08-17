@@ -1002,6 +1002,7 @@ impl Chat {
     /// — a half-written file, a hand-edited one — and the failure that
     /// disagreement produces is a new message overwriting an old one, which is
     /// the kind of bug nobody traces back to a number in a `meta` table.
+    #[cfg(feature = "store")]
     pub(crate) fn load(conversations: Vec<Conversation>, consent: ToolConsent) -> Self {
         let mut conversations = conversations;
         conversations.truncate(MAX_CONVERSATIONS);

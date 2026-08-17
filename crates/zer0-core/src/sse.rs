@@ -25,6 +25,10 @@ pub(crate) enum Framing {
     /// `text/event-stream`: `field: value` lines, a blank line ends an event.
     EventStream,
     /// One JSON document per line, no field names, no blank-line terminator.
+    // Provider-only, as is `Framer::overflowed`: Ollama's framing is the one
+    // speaker of it, and MCP — the other reader here — speaks only the event
+    // stream. A bare core that talks to no model has no line-JSON to read.
+    #[cfg(feature = "provider")]
     LineJson,
 }
 
@@ -77,6 +81,7 @@ impl Framer {
 
     /// The stream stopped making sense and nothing after this point is worth
     /// reading.
+    #[cfg(feature = "provider")]
     pub(crate) fn overflowed(&self) -> bool {
         self.overflowed
     }
@@ -139,6 +144,10 @@ impl Framer {
 
     fn line(&mut self, line: String) -> Option<Frame> {
         match self.framing {
+            Framing::EventStream => self.event_stream_line(&line),
+            // The line-JSON half exists only where a model speaks it; MCP —
+            // the other reader of this framer — is an event stream only.
+            #[cfg(feature = "provider")]
             Framing::LineJson => {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
@@ -149,7 +158,6 @@ impl Framer {
                     data: trimmed.to_owned(),
                 })
             }
-            Framing::EventStream => self.event_stream_line(&line),
         }
     }
 

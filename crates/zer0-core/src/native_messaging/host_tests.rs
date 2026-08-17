@@ -695,6 +695,9 @@ fn the_question_says_the_browser_cannot_see_what_happens_next() {
 
 // MARK: - The one door
 
+// Everything from here down exercises `outcome`, which is the binding layer's
+// door and gated with it — so these run where it runs, not in a bare core.
+#[cfg(feature = "ffi")]
 fn granting(permissions: &[&str]) -> crate::extension_permissions::ConsentDecision {
     crate::extension_permissions::ConsentDecision {
         extension_id: ONE_PASSWORD.to_string(),
@@ -708,6 +711,7 @@ fn granting(permissions: &[&str]) -> crate::extension_permissions::ConsentDecisi
 /// extension whose grant was revoked from the Extensions screen would otherwise
 /// go on starting programs, and ADR-0028's ledger — not the engine's copy of it
 /// — is the authority.
+#[cfg(feature = "ffi")]
 #[test]
 fn an_extension_that_was_not_granted_native_messaging_starts_nothing() {
     let machine = Machine::new("nm-nopermission");
@@ -740,6 +744,7 @@ fn an_extension_that_was_not_granted_native_messaging_starts_nothing() {
 }
 
 /// Absence is *not asked*, and not asked is not yes.
+#[cfg(feature = "ffi")]
 #[test]
 fn a_program_nobody_has_been_asked_about_is_asked_about_rather_than_started() {
     let machine = Machine::new("nm-unasked");
@@ -767,6 +772,7 @@ fn a_program_nobody_has_been_asked_about_is_asked_about_rather_than_started() {
 /// The reason a refusal is written down rather than inferred from absence: a
 /// no that read as "not asked" would put the sheet back on screen at every
 /// press, which is how a dialog stops being read (ADR-0028).
+#[cfg(feature = "ffi")]
 #[test]
 fn a_program_somebody_refused_is_refused_rather_than_asked_about_again() {
     let machine = Machine::new("nm-refused");
@@ -804,6 +810,7 @@ fn a_program_somebody_refused_is_refused_rather_than_asked_about_again() {
     );
 }
 
+#[cfg(feature = "ffi")]
 #[test]
 fn a_program_somebody_allowed_starts_without_being_asked_about_again() {
     let machine = Machine::new("nm-allowedonce");
@@ -837,6 +844,7 @@ fn a_program_somebody_allowed_starts_without_being_asked_about_again() {
 
 /// An answer given about one program says nothing about another, so a
 /// registration repointed at a different binary is a new question.
+#[cfg(feature = "ffi")]
 #[test]
 fn an_answer_about_one_program_does_not_travel_to_another() {
     let machine = Machine::new("nm-repointed");

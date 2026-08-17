@@ -178,6 +178,7 @@ impl Downloads {
 
     /// The integer an extension knows this download by, minting one if this is
     /// the first time anything asked.
+    #[cfg(feature = "ffi")]
     pub(crate) fn api_id(&mut self, id: &DownloadId) -> u64 {
         if let Some(at) = self.api_ids.iter().position(|known| known == id) {
             return at as u64 + 1;
@@ -188,6 +189,7 @@ impl Downloads {
 
     /// The same, without minting. `None` means nothing has ever been told about
     /// this download, so no extension can be holding a number for it.
+    #[cfg(feature = "ffi")]
     pub(crate) fn api_id_if_known(&self, id: &DownloadId) -> Option<u64> {
         self.api_ids
             .iter()
@@ -197,6 +199,7 @@ impl Downloads {
 
     /// Which download an extension means. `None` for a number nobody was given,
     /// including one for a row that has since been removed.
+    #[cfg(feature = "ffi")]
     pub(crate) fn by_api_id(&self, api_id: u64) -> Option<DownloadId> {
         let at = usize::try_from(api_id.checked_sub(1)?).ok()?;
         let id = self.api_ids.get(at)?;
@@ -251,6 +254,8 @@ impl Downloads {
         self.items.retain(Download::is_in_flight);
     }
 
+    /// Rebuild from what a store kept.
+    #[cfg(feature = "store")]
     pub(crate) fn load(items: Vec<Download>) -> Self {
         let mut items = items;
         items.truncate(DOWNLOAD_MEMORY);

@@ -94,13 +94,17 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
 
     // MARK: - The three the engine does not answer
 
+    // The completion types are the gated `typealias`s in `PageDialogHost.swift`:
+    // which isolation the 26.3 CI SDK and the 26.6 author SDK declare for
+    // these handlers disagrees, and the witness has to agree with its SDK.
+
     func webView(
         _: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame _: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable () -> Void
+        completionHandler: @escaping AlertCompletion
     ) {
-        report(.alert(completionHandler), kind: .alert, message: message) {
+        report(.alert({ completionHandler() }), kind: .alert, message: message) {
             completionHandler()
         }
     }
@@ -109,9 +113,9 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
         _: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame _: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
+        completionHandler: @escaping ConfirmCompletion
     ) {
-        report(.confirm(completionHandler), kind: .confirm, message: message) {
+        report(.confirm({ completionHandler($0) }), kind: .confirm, message: message) {
             completionHandler(false)
         }
     }
@@ -121,10 +125,10 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
         initiatedByFrame _: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable (String?) -> Void
+        completionHandler: @escaping PromptCompletion
     ) {
         report(
-            .prompt(completionHandler),
+            .prompt({ completionHandler($0) }),
             kind: .prompt(defaultText: defaultText ?? ""),
             message: prompt
         ) {

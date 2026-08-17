@@ -3,6 +3,20 @@ import Foundation
 import WebKit
 import Zer0Core
 
+// Which isolation these carry, and why it is gated on the compiler, is the
+// story on `PageDialogHandler` just below.
+#if compiler(>=6.3)
+typealias AlertCompletion = @MainActor @Sendable () -> Void
+typealias ConfirmCompletion = @MainActor @Sendable (Bool) -> Void
+typealias PromptCompletion = @MainActor @Sendable (String?) -> Void
+typealias FilesCompletion = @MainActor @Sendable ([URL]?) -> Void
+#else
+typealias AlertCompletion = @Sendable () -> Void
+typealias ConfirmCompletion = @Sendable (Bool) -> Void
+typealias PromptCompletion = @Sendable (String?) -> Void
+typealias FilesCompletion = @Sendable ([URL]?) -> Void
+#endif
+
 /// A completion handler the engine handed over and nobody has called yet.
 ///
 /// One case per method, holding the block that method was given, because the
@@ -12,6 +26,15 @@ import Zer0Core
 ///
 /// Every block is `@MainActor @Sendable` because that is how WebKit declares
 /// them: `WK_SWIFT_UI_ACTOR` on the header's block types.
+///
+/// The two SDKs this tree builds against disagree about that annotation, and
+/// in Swift 6 a witness whose parameter isolation differs from the
+/// requirement's — in either direction — is only a "nearly matches", which
+/// `-warnings-as-errors` fails: Xcode 26.6 (the author's) isolates the
+/// handler, the 26.3 one CI pins does not. So the four spellings at the top of
+/// this file are gated once, on the compiler — each Xcode ships its SDK with
+/// it — and every construction site wraps the handler in a closure literal,
+/// which takes its isolation from this enum under either spelling.
 enum PageDialogHandler {
     case alert(@MainActor @Sendable () -> Void)
     case confirm(@MainActor @Sendable (Bool) -> Void)
@@ -117,10 +140,10 @@ extension SitePermissionDelegate {
         _: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable () -> Void
+        completionHandler: @escaping AlertCompletion
     ) {
         report(
-            .alert(completionHandler),
+            .alert({ completionHandler() }),
             kind: .alert,
             message: message,
             source: Self.source(of: frame)
@@ -136,10 +159,10 @@ extension SitePermissionDelegate {
         _: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
+        completionHandler: @escaping ConfirmCompletion
     ) {
         report(
-            .confirm(completionHandler),
+            .confirm({ completionHandler($0) }),
             kind: .confirm,
             message: message,
             source: Self.source(of: frame)
@@ -154,10 +177,10 @@ extension SitePermissionDelegate {
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable (String?) -> Void
+        completionHandler: @escaping PromptCompletion
     ) {
         report(
-            .prompt(completionHandler),
+            .prompt({ completionHandler($0) }),
             kind: .prompt(defaultText: defaultText ?? ""),
             message: prompt,
             source: Self.source(of: frame)
@@ -178,10 +201,10 @@ extension SitePermissionDelegate {
         _: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
+        completionHandler: @escaping FilesCompletion
     ) {
         report(
-            .files(completionHandler),
+            .files({ completionHandler($0) }),
             kind: .chooseFiles(
                 multiple: parameters.allowsMultipleSelection,
                 directories: parameters.allowsDirectories

@@ -37,6 +37,11 @@ mod config_ffi;
 mod downloads;
 #[cfg(feature = "ext")]
 mod ext;
+// Ffi-gated because every caller is the binding layer: the scheme handler the
+// shell routes `zer0-extension-api://` through is reached over uniffi, and no
+// other door into this module exists yet. A bare core that answers no
+// `chrome.*` call has no reason to carry it.
+#[cfg(feature = "ffi")]
 mod extension_api;
 mod extension_permissions;
 mod extension_pins;
@@ -124,6 +129,7 @@ pub use ext::{
     StoreHosts, default_extension_directory, download_url, extension_id_from_store_url,
     install_extension, installed_extensions, store_hosts, uninstall_extension,
 };
+#[cfg(feature = "ffi")]
 pub use extension_api::{ExtensionApiAnswer, ExtensionApiOutcome, HostFacts};
 pub use extension_permissions::{
     ConsentDecision, ConsentRequest, ExtensionConsent, ExtensionStanding, NotProvided,

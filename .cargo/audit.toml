@@ -1,0 +1,17 @@
+# The advisories workflow names this file as one of its two escape hatches
+# (`.github/workflows/advisories.yml`), so this is where an ignore lives —
+# each entry carrying the sentence that says why it is safe to stop hearing
+# about it, and what would make it unsafe again.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — rsa 0.9.10, the Marvin Attack. No fixed upgrade
+    # exists: the maintainers have timed the side channel, consider it out of
+    # scope for the crate, and have not released a patch. The attack reads a
+    # private key by timing RSAES-PKCS1-v1_5 *decryption*; the only rsa use
+    # here is `RsaPublicKey` signature *verification* of CRX proofs
+    # (crates/zer0-core/src/ext/crx.rs, behind the `ext` feature), which
+    # performs no private-key operation at all. Drop this entry the day a
+    # fixed rsa ships.
+    "RUSTSEC-2023-0071",
+]

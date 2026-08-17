@@ -375,7 +375,12 @@ pub fn caller_origin(extension_id: &str) -> Option<String> {
     ExtensionId::parse(extension_id).map(|id| format!("chrome-extension://{}/", id.0))
 }
 
+// Ffi-gated, and the three gates below it travel with it: the binding layer
+// is the only caller, because starting a process is the shell's to do. The
+// bare core still resolves, frames and remembers — the parts two platforms
+// could not disagree about.
 /// What is to happen about one `connectNative` or `sendNativeMessage`.
+#[cfg(feature = "ffi")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum NativeHostOutcome {
@@ -408,6 +413,7 @@ pub enum NativeHostOutcome {
 ///    ([`resolve`]).
 /// 3. **Somebody said yes to this program.** Absence is *not asked*, and not
 ///    asked is not yes.
+#[cfg(feature = "ffi")]
 pub fn outcome(
     application_support: &Path,
     consent: Option<&crate::extension_permissions::ConsentDecision>,
@@ -439,6 +445,7 @@ pub fn outcome(
     }
 }
 
+#[cfg(feature = "ffi")]
 fn refused(refusal: HostRefusal) -> NativeHostOutcome {
     let sentence = refusal_sentence(&refusal);
     NativeHostOutcome::Refused { refusal, sentence }

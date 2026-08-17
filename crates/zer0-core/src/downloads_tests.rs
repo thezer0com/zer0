@@ -336,6 +336,9 @@ fn the_oldest_finished_entry_makes_room_for_a_new_one() {
     assert!(list.get(&DownloadId("newest".into())).is_some());
 }
 
+// Gated with the constructor it exercises: `Downloads::load` is the store's
+// rebuild door, so a default-feature suite has nothing here to test.
+#[cfg(feature = "store")]
 #[test]
 fn a_restored_list_is_capped() {
     let items: Vec<Download> = (0..DOWNLOAD_MEMORY * 2)
