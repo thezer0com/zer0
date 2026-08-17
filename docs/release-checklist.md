@@ -43,33 +43,26 @@ GitHub secrets (Settings → Secrets and variables → Actions):
 - [ ] (human) `ZER0_SIGN_IDENTITY_STABLE` — the identity *name*
       (`Developer ID Application: ... (24X5CQGA86)`). Required: `stable.yml`
       fails the job before the build without it.
-- [ ] (human) `ZER0_NOTARY_PROFILE` — `zer0-ci`. Required on stable.
+- [ ] (human) `ZER0_SIGNING_CERT_P12_BASE64` and `ZER0_SIGNING_CERT_PASSWORD`
+      — the .p12 behind that name, and its password. Both workflows import it
+      into a temporary keychain (the `import signing certificate` step); an
+      ephemeral runner has no other way to hold the identity.
+- [ ] (human) Notarisation runs the App Store Connect API-key path, not a
+      stored profile — a keychain profile never survives an ephemeral
+      runner. Four secrets: `ZER0_APPLE_ID`, `ZER0_APPLE_KEY_ID`,
+      `ZER0_NOTARY_KEY_P8_BASE64`, `ZER0_APPLE_TEAM_ID`. Required on stable;
+      the detect step fails the job without all four.
 - [ ] (human) `ZER0_SPARKLE_PRIVATE_KEY` — private half of the EdDSA pair
       (below). Gates the appcast publish; without it the release stops at the
       uploaded artefact.
 - [ ] (human) Sparkle EdDSA pair generated with `sign_update -g` from the
       Sparkle 2.7.x tarball ([sparkle-setup.md](sparkle-setup.md) § "Generate
-      the pair"); the public half reachable by `apple/scripts/bundle.sh` as
-      `ZER0_SPARKLE_PUBLIC_KEY` at build time. No recovery if the private key
-      is lost. **Missing today:** neither `stable.yml` nor `canary.yml` passes
-      `ZER0_SPARKLE_PUBLIC_KEY` into the build step's env, so a CI-built
-      bundle carries an empty `SUPublicEDKey` and silently refuses every
-      update. Wire it before tagging.
+      the pair"); the public half reaches `apple/scripts/bundle.sh` as
+      `ZER0_SPARKLE_PUBLIC_KEY` — both workflows pass it into the build
+      step's env, so a CI-built bundle carries the real `SUPublicEDKey`.
+      No recovery if the private key is lost.
 - [ ] (human) Optional, for the canary rehearsal only:
       `ZER0_SIGN_IDENTITY_CANARY` (canary signs ad-hoc without it).
-
-Two gaps the secrets alone do not close (**missing today**):
-
-- [ ] (human) The signing certificate must reach the ephemeral Blacksmith
-      runner's keychain. `stable.yml` has no import-certificate step, and a
-      secret holding the identity name is not the certificate. Add the import
-      (base64 `.p12` secret + `security import`) or pin the story in
-      [ci-secrets.md](ci-secrets.md).
-- [ ] (human) Same shape for notarisation: an ephemeral runner has no stored
-      `zer0-ci` profile. `scripts/notarize.sh` supports the direct API-key
-      envs (`ZER0_APPLE_ID`, `ZER0_APPLE_KEY_ID`, `ZER0_APPLE_KEY_PATH`,
-      `ZER0_APPLE_TEAM_ID`); either rehydrate the profile inside the workflow
-      or switch the workflow to that path.
 
 Feed host:
 
@@ -159,13 +152,13 @@ release page and unzip it:
       the matching private half.
 - [ ] (script) `curl -fsI -L <enclosure-url-from-the-appcast>` → 200 — the
       bytes Sparkle will download exist.
-- [ ] (human) LGPL source offer attached to the release (**missing today** —
-      no workflow step does this). Per [licensing.md](licensing.md) §6:
-      `webkit-source-WebKit-7624.4.5.14.1.tar.zst` (tarball of the pinned
-      tag; no local patches exist) plus `SHA256SUMS`, via
-      `gh release upload v0.1.0 webkit-source-WebKit-7624.4.5.14.1.tar.zst SHA256SUMS`.
-      Until it exists the release is out of compliance with LGPL §6(a) —
-      the gating item, not a nice-to-have.
+- [ ] (human) LGPL source offer attached to the release — both workflows
+      build it from the channel's own pin (`source-offer.sh`) and upload
+      `webkit-source-*.tar.zst` plus `SHA256SUMS` with `gh release upload`.
+      Per [licensing.md](licensing.md) §6: verify the asset name carries the
+      pin `scripts/webkit/version.txt` names for the channel — stable the
+      `WebKit-*` tag, canary the sha (ADR-0124). Compliance with LGPL §6(a)
+      rides on this asset: the gating item, not a nice-to-have.
 - [ ] (script) Licence furniture inside the bundle:
       `Contents/Resources/THIRD-PARTY.txt` and the LGPL 2.1 text present
       ([licensing.md](licensing.md) §5), and no

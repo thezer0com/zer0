@@ -6,6 +6,11 @@ name: canary
 # bundle id is `com.thezer0.canary` (resolve-bundle.sh), the profile
 # directory is `Zer0 Canary/`, and the appcast is `appcast-canary.xml`.
 #
+# Every push also rewrites the rolling `latest` GitHub Release (the
+# `rolling-latest` job): the human-facing door to the tip of `main`,
+# secret-free by design -- only GITHUB_TOKEN. The appcast never points
+# at it; that job's comment says why the two channels coexist.
+#
 # Signing is conditional on secrets being present. Today the project
 # signs ad-hoc (ADR-0109, ADR-0108); when a Developer ID Application
 # identity exists, `ZER0_SIGN_IDENTITY_CANARY` plus the .p12/password
@@ -16,10 +21,10 @@ name: canary
 # them.
 #
 # The WebKit engine is not built here. It is restored from the cache
-# written by build-webkit.yml, keyed on the tag in
-# scripts/webkit/version.txt. If that cache is missing the job fails
-# fast: a canary release without the pinned engine is no release at
-# all.
+# written by build-webkit.yml, keyed on the canary sha in
+# scripts/webkit/version.txt (ADR-0124: canary pins an exact commit of
+# WebKit `main`). If that cache is missing the job fails fast: a canary
+# release without its pinned engine is no release at all.
 on:
   push:
     branches: [main]
@@ -29,11 +34,19 @@ concurrency:
   # Canary is the hot branch. A new push supersedes the previous run:
   # nobody consumes an in-flight canary build, and serialising them
   # would make "every push to main" a polite fiction under load.
+  #
+  # The rolling `latest` release adds a correctness reason to cancel rather
+  # than queue: its publish is delete-then-recreate, so a superseded run
+  # left alive could recreate the release after a newer run already did and
+  # move `latest` backwards. Cancelling keeps exactly one writer.
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write  # the appcast publisher commits to gh-pages
+  # contents: write for both writers this file holds: the appcast publisher
+  # (commits to gh-pages) and the rolling-release job (rewrites the `latest`
+  # tag and its release). No other scope is granted.
+  contents: write
 
 jobs:
   build:
@@ -42,6 +55,11 @@ jobs:
     # clones ~7.4 GB and runs zstd -19 over ~5.3 GB of source on a 6-vcpu
     # runner. The tarball is cached per tag, so steady-state runs stay short.
     timeout-minutes: 90
+    # The rolling-release job names the artifact it downloads by version;
+    # exporting it here is the one door that name passes through.
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      archive: ${{ steps.ver.outputs.archive }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -70,19 +88,21 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: read WebKit tag
-        id: tag
+      - name: read WebKit pin
+        id: pin
+        # Canary's pin is a sha of `main` (ADR-0124), read as data the same
+        # way scripts/webkit/common.sh reads it -- never sourced.
         run: |
-          tag="$(sed -n 's/^WEBKIT_TAG=//p' scripts/webkit/version.txt | tail -1)"
-          [[ -n "$tag" ]] || { echo "no WEBKIT_TAG in version.txt" >&2; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          pin="$(sed -n 's/^WEBKIT_CANARY_SHA=//p' scripts/webkit/version.txt | tail -1)"
+          [[ -n "$pin" ]] || { echo "no WEBKIT_CANARY_SHA in version.txt" >&2; exit 1; }
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
 
       - name: restore WebKit build
         id: webkit
         uses: actions/cache@v4
         with:
           path: webkit-build.tar.zst
-          key: webkit-${{ steps.tag.outputs.tag }}
+          key: webkit-canary-${{ steps.pin.outputs.pin }}
           fail-on-cache-miss: true
 
       - name: extract WebKit
@@ -227,10 +247,10 @@ jobs:
             --notes "Automated canary build from ${{ github.sha }}." \
             "${{ steps.ver.outputs.archive }}"
 
-      # LGPL 6(a) (docs/licensing.md section 6): the canary bundle embeds
-      # the same pinned WebKit as stable, so the same source offer attaches
-      # to the canary release. Deterministic per tag; cached like
-      # build-webkit.yml's artefact so only a pin bump pays the compression.
+      # LGPL 6(a) (docs/licensing.md section 6): the canary bundle embeds its
+      # own pinned WebKit -- the sha of `main`, not stable's tag (ADR-0124) --
+      # so the source offer is the sha's source, cached per sha like
+      # build-webkit.yml's artefact so only a bump pays the compression.
       # Gated like the bundle upload above: without the release there is
       # nothing to attach the asset to.
       - name: restore WebKit source offer
@@ -238,10 +258,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dist-source
-          key: webkit-source-${{ steps.tag.outputs.tag }}
+          key: webkit-source-${{ steps.pin.outputs.pin }}
 
       - name: build WebKit source offer
         if: steps.signing.outputs.sparkle == 'true' && github.ref == 'refs/heads/main'
+        # ZER0_CHANNEL tells source-offer.sh which pin to archive; without it
+        # the script defaults to stable and offers the wrong engine's source.
+        env:
+          ZER0_CHANNEL: canary
         run: |
           ./scripts/source-offer.sh --out dist-source \
             --release "canary-${{ steps.ver.outputs.version }}"
@@ -275,3 +299,173 @@ jobs:
         # skipped the import (ad-hoc canary) never created one.
         if: always()
         run: security delete-keychain build.keychain || true
+
+  # The Linux half of the rolling release. Same image and same apt line as
+  # ci.yml's `linux-shell`, so the dependency story cannot drift between the
+  # gate that compiles the shell and the build that ships it. This job only
+  # produces an artifact and never calls `gh`: the release is created by one
+  # job (rolling-latest below), so there is a single writer and no
+  # upload-against-a-recreate race. Not gated on main -- a dispatched branch
+  # build still proves the Linux host compiles; only the release door cares
+  # about the ref.
+  linux-rolling:
+    runs-on: ubuntu-latest
+    # Matched to ci.yml's linux-shell: a cold GTK-stack build is measured
+    # minutes on the free runner, and half an hour is generous against a
+    # hung runner -- which is worse than a red build for the same reason
+    # that job says.
+    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.build.outputs.sha }}
+      archive: ${{ steps.build.outputs.archive }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The -dev headers the `-sys` crates bind against; the same single
+      # command as ci.yml (the update matters: a bare install reads a
+      # package list a runner-image rebuild may have pruned).
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: build linux host
+        id: build
+        run: |
+          cargo build -p zer0-linux --release
+          sha="$(git rev-parse --short HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "archive=zer0-linux-${sha}.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: pack tarball
+        # The README travels inside the tarball on purpose: the binary alone
+        # does not tell anyone which system libraries a run requires.
+        run: |
+          sha="${{ steps.build.outputs.sha }}"
+          stage="$(mktemp -d)"
+          cp target/release/zer0 "$stage/zer0"
+          cat >"$stage/README" <<EOF
+          zer0 -- Linux host, rolling build of main @ ${sha}
+
+          Automated rolling build, replaced on every push to main. This is
+          not a stable release.
+
+          Runtime requirements (what linux/shell/Cargo.toml links against:
+          gtk4 with the v4_12 feature, webkit6):
+            GTK 4 >= 4.12
+            WebKitGTK 6.0 -- the GTK4 API of WebKitGTK
+
+          Debian/Ubuntu 24.04 or newer:
+            sudo apt-get install libgtk-4-1 libwebkitgtk-6.0-4
+
+          Unpack anywhere and run ./zer0
+          EOF
+          tar -czf "zer0-linux-${sha}.tar.gz" -C "$stage" zer0 README
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zer0-linux-${{ steps.build.outputs.sha }}
+          path: zer0-linux-${{ steps.build.outputs.sha }}.tar.gz
+          # rolling-latest downloads it moments later; this copy is
+          # plumbing, not a product, so it does not linger 30 days like
+          # the macOS artifact a human might still want from the run page.
+          retention-days: 1
+
+  # The rolling `latest` release: the human-facing door to the tip of main.
+  # "Try the current build" should need no secrets, no Sparkle and no
+  # 30-day artifact hunt -- just a GitHub URL that always serves the newest
+  # green push.
+  #
+  # Why it coexists with the per-version `canary-<version>` releases above:
+  # the Sparkle appcast points its enclosure URLs at immutable per-version
+  # releases, and a Sparkle client must never be served a different binary
+  # under a URL it cached. `latest` is delete-and-recreate and therefore can
+  # never enter the appcast; it is for humans, not for Sparkle.
+  #
+  # Single writer: this is the only job that creates or deletes the `latest`
+  # release, and it downloads every artifact first and publishes once. A
+  # partial release (macOS asset live, Linux missing) cannot happen, and no
+  # upload can race a recreate.
+  #
+  # `needs` holds the release back when either host is red on purpose: a
+  # release claiming to be "main" should not move while main is broken. The
+  # previous green push's `latest` simply stays until a fully green push
+  # replaces it -- fail closed, same instinct as the WebKit cache miss.
+  rolling-latest:
+    needs: [build, linux-rolling]
+    # workflow_dispatch can run on any branch; `latest` must track main
+    # only -- the same gate the appcast steps carry.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # A full clone plus two gh calls; generous against a slow clone, and a
+    # hung publisher must not sit on the concurrency slot forever.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          # Full history: the notes walk commits back to the newest v* tag,
+          # which a depth-1 checkout cannot even see.
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: zer0-canary-${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: zer0-linux-${{ needs.linux-rolling.outputs.sha }}
+      - name: compose release notes
+        run: |
+          sha="$(git rev-parse --short HEAD)"
+          since="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          {
+            echo "### Rolling build of \`main\` @ \`${sha}\`"
+            echo
+            echo "Automated build of the tip of \`main\`, commit [\`${sha}\`](https://github.com/${{ github.repository }}/commit/${GITHUB_SHA})."
+            echo "This release is rewritten on every push: nothing here is stable, and the"
+            echo "\`Latest\` badge belongs to the official \`v*\` releases, not this one."
+            echo
+            if [[ -n "$since" ]]; then
+              echo "**Commits since ${since}:**"
+            else
+              # No v* tag exists yet; the honest fallback is "the last few
+              # commits", not an invented range.
+              echo "**Recent commits (no \`v*\` tag exists yet):**"
+            fi
+            echo '```'
+            if [[ -n "$since" ]]; then
+              git log "${since}..HEAD" --oneline
+            else
+              git log -10 --oneline
+            fi
+            echo '```'
+            echo
+            echo "**Assets**"
+            echo
+            echo "- \`${{ needs.build.outputs.archive }}\` -- macOS app, WebKit embedded (canary profile)"
+            echo "- \`${{ needs.linux-rolling.outputs.archive }}\` -- Linux host binary and README (runtime deps inside)"
+            echo
+            echo "**Signature:** signed and notarized when secrets are configured; otherwise"
+            echo "ad-hoc -- Gatekeeper may refuse to launch it on other Macs (right-click, Open)."
+          } > notes.md
+      - name: publish rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="$(git rev-parse --short HEAD)"
+          # Delete-and-recreate rather than edit-in-place: the tag must move
+          # to the new commit and stale assets must not survive, and a fresh
+          # create is the only mode that guarantees both. `|| true` covers
+          # the first run and the run after a cancelled predecessor: there
+          # is nothing to delete.
+          gh release delete latest --yes --cleanup-tag || true
+          # --latest=false is load-bearing: the repo's "Latest" badge stays
+          # on official v* releases, and a rolling channel must never wear
+          # it. --prerelease implies this today; saying it makes it a
+          # guarantee instead of a side effect.
+          gh release create latest \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title "zer0 rolling (main @ ${sha})" \
+            --notes-file notes.md \
+            "${{ needs.build.outputs.archive }}" "${{ needs.linux-rolling.outputs.archive }}"

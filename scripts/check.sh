@@ -63,6 +63,20 @@ echo "==> sf symbol budget"
 echo "==> design tokens"
 ./scripts/token-check.sh
 
+# Also cheap, also before the compilers: version.txt is the one place a WebKit
+# revision is written down, and common.sh plus three workflows parse it as
+# data -- a key renamed on one side is a channel silently building the other's
+# engine, because every cache key still resolves. The contract is held here
+# (ADR-0124).
+echo "==> webkit versions"
+./scripts/webkit/check-versions.sh
+
+# Also cheap, also before the compilers: the release policy is written in
+# two workflow files (ADR-0125) and nothing on a laptop executes a workflow
+# -- these greps are what keep "documented" meaning "still written down".
+echo "==> release policy"
+./scripts/check-release-policy.sh
+
 echo "==> cargo fmt"
 cargo fmt --all --check
 
@@ -113,6 +127,14 @@ if [[ "$(uname)" == "Darwin" ]]; then
 		swift test --skip "$HEAVY" &&
 		echo "==> swift test (second list)" &&
 		swift test --filter "$HEAVY")
+
+	# The shared set is locked from both sides. `swift build` above proves the
+	# macOS half; this proves the same files still compile against the iOS SDK
+	# — a shell file that drifts onto a macOS-only API fails here, at the gate,
+	# rather than in the iOS host's build a world away (ADR-0123). Typecheck
+	# only: no simulator, no Xcode, seconds.
+	echo "==> ios typecheck"
+	./apple/scripts/typecheck-ios.sh
 fi
 
 echo "all green"
