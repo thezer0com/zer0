@@ -309,6 +309,52 @@ struct EnginePolicyTests {
         #expect(opened.configuration.mediaTypesRequiringUserActionForPlayback == .audio)
     }
 
+    /// The other half of the sheet: behaviour the core decides, not a person.
+    ///
+    /// Background throttling and HTTPS-first were constants here until
+    /// ADR-0120, which is the regression this exists to catch — a shell that
+    /// spells them itself again stays green on every value assertion above,
+    /// because the defaults agree. Only a core that says "off" and a view born
+    /// afterwards can tell a derived value from a hardcoded one.
+    ///
+    /// Born afterwards, like the autoplay switch above and for the same
+    /// measured reason: the scheduling policy is readable off a live view's
+    /// `WKPreferences` but only ever written at birth, and the HTTPS policy
+    /// lives on the configuration, which is a copy.
+    @Test("engine behaviour the core decides reaches views born after it")
+    func engineBehaviourTheCoreDecidesReachesViewsBornAfterIt() throws {
+        let m = model()
+
+        #expect(m.preferences.backgroundThrottling, "ships on")
+        #expect(m.preferences.httpsFirst, "ships on")
+
+        m.updatePreferences {
+            $0.backgroundThrottling = false
+            $0.httpsFirst = false
+        }
+
+        m.send(.openTab(space: nil, url: nil, parent: nil))
+        let tab = try #require(m.snapshot.activeTab)
+        let fresh = try #require(m.engine.webView(for: tab))
+
+        #expect(fresh.configuration.preferences.inactiveSchedulingPolicy == .none, """
+            a tab born after the core stopped throttling is still throttled. The core owns this
+            answer (ADR-0120); if it stopped reaching the view, `applyEnginePolicy` is spelling a
+            constant the core already decided.
+            """)
+
+        #expect(
+            fresh.configuration.defaultWebpagePreferences.preferredHTTPSNavigationPolicy
+                == .keepAsRequested,
+            """
+            a tab born after the core turned HTTPS-first off still upgrades typed http addresses.
+            The core owns navigation policy (ADR-0120); the silent fallback is part of the
+            semantics, and `.keepAsRequested` — not the mediated interstitial — is what "off"
+            means.
+            """
+        )
+    }
+
     /// One door.
     ///
     /// The sheet above is only true of pages built through `HostedWebView`. A

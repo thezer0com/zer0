@@ -4266,3 +4266,48 @@ fn crossing_into_an_extension_does_not_carry_the_back_list_over() {
     );
     assert!(f.session.navigation_states.get(tab).is_none());
 }
+
+/// Whether a tab can go back and forward is the core's state, written by the
+/// engine's report and read by everything that draws or keys a Back. The shell
+/// never puts the question to its own engine (ADR-0002: two platforms could
+/// not disagree about the answer, so it is not theirs to give).
+#[test]
+fn the_back_and_forward_answer_is_state_the_core_holds() {
+    let mut f = Fixture::new();
+    let tab = f.open();
+    let t = f.session.browser.tab(tab).unwrap();
+    assert!(
+        !t.can_go_back && !t.can_go_forward,
+        "no engine has spoken for a fresh tab"
+    );
+
+    let out = f.send(Action::NavigationStackChanged {
+        tab,
+        can_go_back: true,
+        can_go_forward: false,
+    });
+    assert!(
+        out.is_empty(),
+        "a report asks nothing of the engine: {out:?}"
+    );
+    let t = f.session.browser.tab(tab).unwrap();
+    assert!(t.can_go_back && !t.can_go_forward);
+
+    f.send(Action::NavigationStackChanged {
+        tab,
+        can_go_back: false,
+        can_go_forward: true,
+    });
+    let t = f.session.browser.tab(tab).unwrap();
+    assert!(!t.can_go_back && t.can_go_forward);
+
+    // A report for a tab that has gone changes nothing and breaks nothing.
+    f.send(Action::CloseTab { tab });
+    let out = f.send(Action::NavigationStackChanged {
+        tab,
+        can_go_back: true,
+        can_go_forward: true,
+    });
+    assert!(out.is_empty());
+    assert!(f.session.browser.tab(tab).is_none());
+}

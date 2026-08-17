@@ -45,7 +45,41 @@ import Zer0Core
 /// Nothing. Which tab the question belongs to, whether the panel may interrupt,
 /// how much of the message is drawn and who gets named are all in
 /// `page_dialogs.rs`, the same as for a page.
-final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
+final class ExtensionPopupDialogDelegate: ExtensionPopupDialogBase, WKUIDelegate {
+    // Empty, on purpose: the conformance lives here and only here, so the
+    // panel methods below stay out of the compiler's witness matching. The
+    // mechanism, and the measurements behind it, are on
+    // `ExtensionPopupDialogBase`.
+}
+
+/// Everything the popup delegate does, on a class that does not conform to
+/// `WKUIDelegate`.
+///
+/// ## Why the panels live one class below their conformance
+///
+/// The two WebKit SDKs this tree builds against spell these completions
+/// differently — the 26.3 one imports them as plain `@Sendable`, the 26.6
+/// one as `@MainActor @Sendable` — and the compiler version does not tell
+/// them apart: measured, the CI runner's SDK changed spelling between two
+/// rounds on the same Swift 6.2. No signature matches both, and the
+/// compiler's answers to a mismatch were measured too, in probes against
+/// both spellings:
+///
+/// - in the conforming declaration it is the "nearly matches" warning, which
+///   `-warnings-as-errors` fails — the CI break this layout ends;
+/// - moved to an extension it compiles, and silently loses `@objc`: WebKit
+///   dispatches by selector, so it never calls the method at all;
+/// - given a hand-written `@objc` in that extension it is a hard error
+///   ("conflicts with optional requirement").
+///
+/// A base class is the one placement that is both invisible to the witness
+/// matcher — it only reads the conforming declaration and its extensions —
+/// and visible to the runtime: an explicit `@objc` puts the method in the
+/// class's ObjC method table, and selector dispatch finds an inherited
+/// method like any other. Probed against both SDK spellings: no diagnostic
+/// under either, and a call made through the protocol reaches the method
+/// under both.
+class ExtensionPopupDialogBase: NSObject {
     /// The name the person installed it under, already resolved through
     /// `_locales` by the core, so it is the name on the button rather than
     /// `__MSG_extName__`.
@@ -94,10 +128,13 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
 
     // MARK: - The three the engine does not answer
 
-    // The completion types are the gated `typealias`s in `PageDialogHost.swift`:
-    // which isolation the 26.3 CI SDK and the 26.6 author SDK declare for
-    // these handlers disagrees, and the witness has to agree with its SDK.
+    // `@objc` is what makes the placement above worth anything: without it
+    // the runtime has no method to find, with it the selector is registered
+    // whatever the local SDK's header says. The completions are spelled the
+    // one way `PageDialogHandler` holds them, not the way any one SDK
+    // imports them.
 
+    @objc @MainActor
     func webView(
         _: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
@@ -109,6 +146,7 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
         }
     }
 
+    @objc @MainActor
     func webView(
         _: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
@@ -120,6 +158,7 @@ final class ExtensionPopupDialogDelegate: NSObject, WKUIDelegate {
         }
     }
 
+    @objc @MainActor
     func webView(
         _: WKWebView,
         runJavaScriptTextInputPanelWithPrompt prompt: String,

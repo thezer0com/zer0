@@ -25,9 +25,11 @@ cd "$ROOT"
 
 SHELL_DIR="apple/Sources/Zer0Shell"
 
-# 112 on 2026-08-15: 66 `systemName:` + 46 `systemImage:` (ADR-0116). Only
-# ever moves down, in the PR that migrated the sites away.
-BUDGET=112
+# 107 on 2026-08-16: the find bar's five sites migrated to the licensed set
+# (ADR-0116) — the first component to move. Was 112 on 2026-08-15: 66
+# `systemName:` + 46 `systemImage:`. Only ever moves down, in the PR that
+# migrated the sites away.
+BUDGET=107
 
 count_sites() {
 	# grep exits 1 on zero matches, which under `pipefail` would turn "fully

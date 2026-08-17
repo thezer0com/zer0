@@ -39,6 +39,11 @@ Three choices inside that:
   `profile.user_agent`, it becomes `webView.customUserAgent` and replaces
   everything — the half of isolation the cookie jar does not cover (ADR-0007).
 
+*Amended 2026-08-16: the composition itself moved to the core
+(`crates/zer0-core/src/ua.rs`); the shell now reads the installed Safari's
+version and applies the string it gets back — ADR-0119. Nothing about the
+decision above changed, only where it is spelled.*
+
 ## Consequences
 
 - **We lie by omission, and the lie is going to get expensive.** Sites decide

@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/zer0-core"]
+members = ["crates/zer0-core", "linux/shell"]
+# Bare `cargo` commands must keep meaning "the core" (ADR-0122): check.sh and
+# the linux-core CI job run clippy and tests with no `-p`, and the Linux shell
+# needs system GTK/WebKit headers that neither a bare ubuntu runner nor the
+# author's mac has installed — pulling it into the default build would turn
+# every existing gate red for a reason that is not about the code. The shell
+# is still a member: `cargo fmt --all` covers it, and the linux-shell CI job
+# builds it explicitly with `-p zer0-linux`.
+default-members = ["crates/zer0-core"]
 
 [workspace.package]
 version = "0.1.0"

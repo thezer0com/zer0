@@ -29,7 +29,7 @@ use crate::model::{NavigationError, Space, SpaceId, Tab, TabId, Window, WindowId
 use crate::native_messaging::{self, NativeHostDecision, NativeHostOutcome};
 use crate::page_dialogs::PageDialog;
 use crate::preferences::{self, Preferences, SearchEngine};
-use crate::protocol::{Action, EngineCommand};
+use crate::protocol::{Action, EngineCommand, HostCapabilities};
 use crate::reducer;
 use crate::routing::Route;
 use crate::session::Session;
@@ -116,6 +116,17 @@ pub struct BrowserSnapshot {
     /// draws the error and reaches for this when the error is
     /// `certificateInvalid`.
     pub certificate_report: Option<CertificateReport>,
+}
+
+/// The version of the core itself, so a host can show or log which core it
+/// linked without keeping a second copy of the string that can drift.
+///
+/// A free function for the same reason `mcp_protocol_version` is one: the
+/// version is a fact about the core, and a host that hardcoded it would
+/// report the core it shipped last month.
+#[uniffi::export]
+pub fn core_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 /// How far along a download is, or `None` when that cannot be worked out.
@@ -260,6 +271,12 @@ pub(crate) struct State {
     // `pub(crate)` alongside `lock()` for the same reason: a second FFI surface
     // in another file needs the same session, not a second one.
     pub(crate) session: Session,
+    /// What the host declared it can do, set once at the door and consulted
+    /// before anything that needs a capability the host may not have. The
+    /// shape rather than a checklist of `if`s scattered at call sites: one
+    /// place holds the declaration, and a capability without a consumer here
+    /// is a field nobody reads (ADR-0118).
+    capabilities: HostCapabilities,
     /// Behind the trait rather than named as a concrete store: which backend
     /// holds the session is a decision taken once, in `open`, and nothing
     /// downstream of it gets to depend on the answer. `None` is a browser that
@@ -319,7 +336,15 @@ fn scratch_extensions_dir() -> PathBuf {
     ))
 }
 
-/// Handle held by the shell for the lifetime of the app.
+/// The one place a capability retires a command from the keymap.
+///
+/// Called at every mint — both constructors (after any stored session was
+/// loaded, so a custom binding saved on another host cannot survive the
+/// trip) and `reset_keymap`, which mints the defaults again — and after
+/// every bind and rebind, the doors that can hand a retired command a
+/// chord at runtime — because a retirement any of them could resurrect
+/// would be the gate reopening behind Handle held by the shell for the
+/// lifetime of the app.
 #[derive(uniffi::Object)]
 pub struct Zer0 {
     // The shell calls in from the main thread today, but WKWebView delegates
@@ -366,11 +391,23 @@ impl State {
 #[uniffi::export]
 impl Zer0 {
     /// Start without touching the disk. Everything is lost on quit.
+    ///
+    /// `capabilities` is the host's declaration, not a preference: whatever it
+    /// leaves out is refused fail-closed by the calls that need it, so a host
+    /// that says nothing gets a browser that answers "cannot" — with the
+    /// reason — rather than one that half-works.
     #[uniffi::constructor]
-    pub fn in_memory(first_space_name: String, data_store_id: String) -> Arc<Self> {
+    pub fn in_memory(
+        first_space_name: String,
+        data_store_id: String,
+        capabilities: HostCapabilities,
+    ) -> Arc<Self> {
+        let mut session = Session::new(first_space_name, data_store_id);
+        session.retire_what_the_host_cannot_run(capabilities);
         Arc::new(Self {
             state: Mutex::new(State {
-                session: Session::new(first_space_name, data_store_id),
+                session,
+                capabilities,
                 store: None,
                 icons: None,
                 extensions_dir: scratch_extensions_dir(),
@@ -392,7 +429,12 @@ impl Zer0 {
     /// and no warning. So the store is detached instead: the browser runs, and
     /// refuses to write anything on top of a file it could not understand.
     #[uniffi::constructor]
-    pub fn open(db_path: String, first_space_name: String, data_store_id: String) -> Arc<Self> {
+    pub fn open(
+        db_path: String,
+        first_space_name: String,
+        data_store_id: String,
+        capabilities: HostCapabilities,
+    ) -> Arc<Self> {
         // The one place in the browser that names a backend. Everything after
         // this line talks to whatever it opened through `SessionStore`.
         let store = Store::open(&db_path).ok();
@@ -428,6 +470,10 @@ impl Zer0 {
         // (ADR-0060 drops a thread whose address this build cannot read). The
         // pass costs one walk over the tabs at launch.
         reducer::name_our_pages(&mut session);
+        // After the load, not before it: a keymap saved on a host that can
+        // print may carry a print binding, and it must not arrive answered
+        // on one that cannot.
+        session.retire_what_the_host_cannot_run(capabilities);
 
         // Deliberately not gated on `load_error`. This is a different file
         // holding a cache, so an unreadable session cannot corrupt it and a
@@ -448,6 +494,7 @@ impl Zer0 {
         Arc::new(Self {
             state: Mutex::new(State {
                 session,
+                capabilities,
                 store,
                 icons,
                 extensions_dir: ext::default_extension_directory(&profile_dir),
@@ -979,7 +1026,10 @@ impl Zer0 {
     /// Every binding, for building menus and for matching key presses.
     ///
     /// The shell renders these; it does not decide them. That is what keeps
-    /// ⌘T meaning the same thing on macOS and Ctrl+T on Linux.
+    /// ⌘T meaning the same thing on macOS and Ctrl+T on Linux. A command
+    /// this host declared it cannot run is not in the list at all — retired
+    /// where the keymap is minted, so a menu built from this never wears a
+    /// chord whose press does nothing (ADR-0118).
     pub fn keymap(&self) -> Vec<Binding> {
         self.lock().session.keymap.bindings().to_vec()
     }
@@ -995,12 +1045,23 @@ impl Zer0 {
 
     /// Add a chord for a command, leaving any it already had.
     pub fn bind_shortcut(&self, chord: Chord, command: UiCommand) {
-        self.lock().session.keymap.bind(chord, command);
+        let mut state = self.lock();
+        state.session.keymap.bind(chord, command);
+        // A bind can hand a chord to a command the mint retired; without
+        // this, this door resurrects it — answered, advertised and, once
+        // the chord differs from the default, saved (ADR-0118).
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     /// Make this the command's only chord.
     pub fn rebind_shortcut(&self, command: UiCommand, chord: Chord) {
-        self.lock().session.keymap.rebind(command, chord);
+        let mut state = self.lock();
+        state.session.keymap.rebind(command, chord);
+        // Same rule as `bind_shortcut` above: a command this host cannot
+        // run cannot come back by being given a different chord.
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     pub fn unbind_shortcut(&self, chord: Chord) -> bool {
@@ -1008,7 +1069,12 @@ impl Zer0 {
     }
 
     pub fn reset_keymap(&self) {
-        self.lock().session.keymap.reset();
+        let mut state = self.lock();
+        state.session.keymap.reset();
+        // The defaults this just minted include every command; what this
+        // host declared it cannot run goes back out again (ADR-0118).
+        let capabilities = state.capabilities;
+        state.session.retire_what_the_host_cannot_run(capabilities);
     }
 
     // MARK: - Extensions
@@ -1059,11 +1125,28 @@ impl Zer0 {
     }
 
     /// Unpack a downloaded package and make it ready to load.
+    ///
+    /// Refused before anything touches the disk when this host declared no
+    /// extension runtime. An install that unpacks and never runs is
+    /// success-shaped silence — the row appears, the button does nothing — so
+    /// the gate comes first and the sentence is the core's one vocabulary for
+    /// *cannot*: the build, then the reason (ADR-0103, ADR-0118).
     pub fn install_extension(&self, package: Vec<u8>) -> Result<InstalledExtension, Zer0Error> {
-        let (dir, locale) = {
+        let (capabilities, dir, locale) = {
             let state = self.lock();
-            (state.extensions_dir.clone(), state.ui_locale.clone())
+            (
+                state.capabilities,
+                state.extensions_dir.clone(),
+                state.ui_locale.clone(),
+            )
         };
+        if !capabilities.extension_runtime {
+            return Err(Zer0Error::Extension {
+                message:
+                    "this build of zer0 cannot run extensions — the host declared no extension runtime"
+                        .into(),
+            });
+        }
         std::fs::create_dir_all(&dir).map_err(|e| Zer0Error::Extension {
             message: e.to_string(),
         })?;

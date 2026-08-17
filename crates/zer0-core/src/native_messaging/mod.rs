@@ -654,6 +654,12 @@ fn allows(object: &serde_json::Map<String, serde_json::Value>, wanted: &Extensio
         .any(|allowed| allowed == *wanted)
 }
 
-#[cfg(test)]
+// Unix only, on purpose. These tests prove the exec-bit and symlink halves
+// of the door, and on Windows `is_executable` fail-closes by design — no
+// registration can resolve there, so the positive assertions have no meaning
+// and the file's own machinery (`PermissionsExt`, `symlink`, unescaped
+// paths inside JSON strings) does not compile for msvc. The windows-core CI
+// job proves this module compiles there; unix proves it behaves.
+#[cfg(all(test, unix))]
 #[path = "host_tests.rs"]
 mod tests;

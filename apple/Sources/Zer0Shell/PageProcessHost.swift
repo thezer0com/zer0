@@ -50,6 +50,18 @@ extension HostedWebView {
     /// untouched and perfectly able to load. So the answer is synchronous, it
     /// is the only signal there is, and a refusal costs nothing.
     ///
+    /// **The implicit load can fail, and it fails quietly.** Setting
+    /// `interactionState` makes the engine load the current item by itself,
+    /// and measured 2026-08-16 — chasing a gate that was intermittently red
+    /// under a loaded tree and clean without it (0 failures in 6 runs on
+    /// HEAD, 11 in 19 with the WIP) — under UI-process contention that load
+    /// fails transiently: a "Cannot open file" failure, the view's `url`
+    /// still `nil`, and the tab on ADR-0016's dead-page screen where retry
+    /// is the person's. Nothing here detects or retries it: reloading a page
+    /// whose load died of contention is the same bargain as one whose
+    /// process died on load, and the fact is written down so the next person
+    /// recognises WebKit's cliff instead of suspecting the core.
+    ///
     /// Returning it rather than acting on it: the core held back this tab's
     /// `LoadUrl` when it handed the state over, and whether to send it now is
     /// the core's call.
@@ -74,5 +86,44 @@ extension HostedWebView {
     func reportNavigationState() {
         guard webView.url != nil, let state = webView.interactionState as? Data else { return }
         emitAction(.navigationStateChanged(tab: tab, state: state))
+    }
+
+    /// Tell the core whether this tab can go back and forward, as the engine
+    /// answers it right now.
+    ///
+    /// Whether ⌘[ does anything is behaviour, so the answer is the core's to
+    /// hold and every reader's to take from the snapshot — never a question
+    /// this shell puts to its own engine, which is the shape each platform
+    /// would answer its own way (ADR-0002). The *reading* is still the host's,
+    /// because only the engine holds the list; that is the whole division of
+    /// labour here.
+    ///
+    /// Called from the observations on the two properties, which is one door
+    /// covering every path that moves the engine's answer — a commit, a Back,
+    /// a restore — rather than an emission point per path that a new one
+    /// could forget. (Measured: a same-document `history.pushState` does not
+    /// move `canGoBack` at all — WebKit keeps those entries in the page's own
+    /// history and out of the back/forward list — so there is genuinely
+    /// nothing to report on that path, and the core and the engine stay in
+    /// agreement by both saying no.)
+    ///
+    /// Deduplicated against the last pair this view reported: both
+    /// observers fire for one navigation — measured 2026-08-16, when the
+    /// doubled reports were the largest per-navigation addition in the tree
+    /// — and the unchanged flag's fire repeats what the changed flag's
+    /// already said. A repeated pair would cost a full core dispatch and
+    /// refresh to change nothing, so it is not sent.
+    func reportNavigationStack() {
+        let back = webView.canGoBack
+        let forward = webView.canGoForward
+        if let last = lastReportedStack, last.canGoBack == back, last.canGoForward == forward {
+            return
+        }
+        lastReportedStack = (canGoBack: back, canGoForward: forward)
+        emitAction(.navigationStackChanged(
+            tab: tab,
+            canGoBack: back,
+            canGoForward: forward
+        ))
     }
 }

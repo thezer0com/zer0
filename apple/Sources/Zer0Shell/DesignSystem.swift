@@ -1,4 +1,8 @@
+// AppKit is this file's one platform-dependence, and `VisualEffect` is its
+// only consumer: the iOS host compiles the rest of this file unchanged.
+#if canImport(AppKit)
 import AppKit
+#endif
 import SwiftUI
 
 /// The visual vocabulary, in one place.
@@ -174,10 +178,12 @@ enum Design {
         /// rendered pixels, below which the diagonal cut survives only as a
         /// disturbance in the antialiasing.
         static let mark: CGFloat = 72
-        /// An SF Symbol that is the whole of a control's label, in a strip
-        /// sized for the window's own controls rather than for a line of
-        /// prose. There is no text beside it to match, so it is sized to the
-        /// strip it sits in.
+        /// A glyph that is the whole of a control's label, in a strip sized
+        /// for the window's own controls rather than for a line of prose.
+        /// There is no text beside it to match, so it is sized to the strip
+        /// it sits in. Worn by both symbol systems while the migration runs
+        /// (ADR-0116): the sidebar toggle in SF Symbols, the find bar's
+        /// buttons in the licensed set.
         static let control: CGFloat = 13
     }
 
@@ -499,6 +505,7 @@ extension View {
 
 }
 
+#if canImport(AppKit)
 /// A real `NSVisualEffectView`, for the one panel that floats over a web view.
 ///
 /// SwiftUI's `.regularMaterial` blurs the SwiftUI-rendered backdrop. A
@@ -558,6 +565,36 @@ struct VisualEffect: NSViewRepresentable {
         view.layer?.cornerCurve = .continuous
     }
 }
+#else
+/// The same floating panels on iOS: painted, not blurred.
+///
+/// UIKit's `UIVisualEffectView` has no trouble sampling a hosted web view —
+/// the defect that forces the AppKit half above into existence — and that is
+/// exactly why it is not reached for. ADR-0043 settled "painted, not blurred"
+/// as the language of this product's chrome, and an iOS panel that blurred
+/// where the macOS palette paints would be two languages wearing one design
+/// system. The panel falls to `Palette.chrome`, the surface the rest of the
+/// floating chrome is painted with, behind the same continuous corner the
+/// AppKit half masks onto its layer.
+struct VisualEffect: View {
+    /// The materials the shell's floating panels are made of, spelled as
+    /// macOS spells them so a shared call site compiles unchanged on both
+    /// platforms. A case lands with the consumer that needs it — the same
+    /// rule `LucideIcon` holds its geometry to.
+    enum Material {
+        case hudWindow
+    }
+
+    let material: Material
+    var radius: CGFloat = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Design.Palette.chrome)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+}
+#endif
 
 /// What a control does under the pointer and under the finger.
 ///

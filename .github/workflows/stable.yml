@@ -61,18 +61,20 @@ jobs:
           cache-on-failure: true
           save-if: ${{ startsWith(github.ref, 'refs/tags/') }}
 
-      - name: read WebKit tag
-        id: tag
+      - name: read WebKit pin
+        id: pin
+        # Stable's pin is the `WebKit-*` source-drop tag (ADR-0124), read as
+        # data the same way scripts/webkit/common.sh reads it -- never sourced.
         run: |
-          tag="$(sed -n 's/^WEBKIT_TAG=//p' scripts/webkit/version.txt | tail -1)"
-          [[ -n "$tag" ]] || { echo "no WEBKIT_TAG in version.txt" >&2; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          pin="$(sed -n 's/^WEBKIT_TAG_STABLE=//p' scripts/webkit/version.txt | tail -1)"
+          [[ -n "$pin" ]] || { echo "no WEBKIT_TAG_STABLE in version.txt" >&2; exit 1; }
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
 
       - name: restore WebKit build
         uses: actions/cache@v4
         with:
           path: webkit-build.tar.zst
-          key: webkit-${{ steps.tag.outputs.tag }}
+          key: webkit-stable-${{ steps.pin.outputs.pin }}
           fail-on-cache-miss: true
 
       - name: extract WebKit
@@ -210,23 +212,30 @@ jobs:
         # the appcast enclosure points at this exact URL and Sparkle cannot
         # fetch a draft asset -- the "release goes live" signal is the
         # appcast entry that follows, not the visibility of this page.
+        #
+        # `make_latest: true` is written out, not left to the action's
+        # default: the rolling `latest` release on main is published with
+        # --latest=false (ADR-0125), and the Latest badge must move only
+        # with a tag. A default change on either side must not be able to
+        # move the recommendation silently.
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.ver.outputs.archive }}
           generate_release_notes: true
+          make_latest: true
 
       # LGPL 6(a) (docs/licensing.md section 6): a release that embeds WebKit
-      # must offer the exact source of the pinned tag alongside the binary.
-      # The tarball is deterministic per tag, so it is cached as a file (the
-      # build-webkit.yml pattern) rather than re-cloned and re-compressed on
-      # every release.
+      # must offer the exact source of the pinned revision alongside the
+      # binary. The tarball is deterministic per pin, so it is cached as a
+      # file (the build-webkit.yml pattern) rather than re-cloned and
+      # re-compressed on every release.
       - name: restore WebKit source offer
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/cache@v4
         with:
           path: dist-source
-          key: webkit-source-${{ steps.tag.outputs.tag }}
+          key: webkit-source-${{ steps.pin.outputs.pin }}
 
       - name: build WebKit source offer
         if: startsWith(github.ref, 'refs/tags/')
@@ -266,3 +275,73 @@ jobs:
         # failed before the import never created one.
         if: always()
         run: security delete-keychain build.keychain || true
+
+  # The Linux artefact of the same tag (ADR-0125): the core plus the GTK
+  # shell, packed as a tar.gz with its runtime dependencies declared beside
+  # the binary. It needs `build` because the release it attaches to is
+  # created there; it deliberately does not gate it -- a broken GTK header
+  # on ubuntu must not hold a signed, notarised macOS release hostage. The
+  # failure stays loud as a red job on the tag's run, and a re-run attaches
+  # with --clobber once fixed.
+  linux-stable:
+    name: linux stable artefact
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ startsWith(github.ref, 'refs/tags/') }}
+
+      # The same packages ci.yml's linux-shell job installs: the headers
+      # the -sys crates ask pkg-config for. `libwebkitgtk-6.0-dev` is the
+      # GTK4 API of WebKitGTK, which the `webkit6` crate binds.
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - run: cargo build -p zer0-linux --release
+
+      - name: pack tarball
+        id: pack
+        # The shell reads design/tokens.toml and design/logo/zer0.svg at
+        # runtime, walking up from the working directory (ADR-0122), so the
+        # tarball carries them beside the binary: unpacked and run from its
+        # own directory, the app finds its design without an install step.
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          arch="$(uname -m)"
+          dir="zer0-${ver}-linux-${arch}"
+          mkdir -p "${dir}/design/logo"
+          cp target/release/zer0 "${dir}/zer0"
+          cp design/tokens.toml "${dir}/design/tokens.toml"
+          cp design/logo/zer0.svg "${dir}/design/logo/zer0.svg"
+          {
+            echo "zer0 ${ver} for Linux (${arch})"
+            echo
+            echo "Run ./zer0 from this directory; it reads design/tokens.toml"
+            echo "from the working directory, or ZER0_TOKENS if set."
+            echo
+            echo "Runtime dependencies are provided by the distribution:"
+            echo "GTK 4.12 or newer and WebKitGTK's 6.0 (GTK4) API. On"
+            echo "Ubuntu 24.04: sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4;"
+            echo "elsewhere, whatever provides those two libraries."
+          } > "${dir}/README"
+          tar -czf "${dir}.tar.gz" "${dir}"
+          echo "tarball=${dir}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: attach to the tag's release
+        # The release exists by the time this runs -- `build` created it.
+        # The same `gh release upload` door the WebKit source offer uses,
+        # for the same reason: the asset list is append-only from wherever
+        # an artefact becomes ready. Skipped on workflow_dispatch, where
+        # GITHUB_REF_NAME is not a tag.
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" --clobber

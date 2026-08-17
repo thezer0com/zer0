@@ -23,7 +23,11 @@ struct ZZExtensionOfferShots {
     /// manifest that declares both storage permissions, which is what drew the
     /// same sentence twice.
     private func request(name: String) -> ConsentRequest {
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
+        )
         return core.extensionConsentRequest(extension: InstalledExtension(
             id: String(repeating: "a", count: 32),
             path: "/nowhere",

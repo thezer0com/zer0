@@ -23,7 +23,11 @@ struct ChromeTintTests {
 
     /// A core with one tab, ready to be told what colour its page is.
     private func core() -> (Zer0, TabId) {
-        let core = Zer0.inMemory(firstSpaceName: "Personal", dataStoreId: UUID().uuidString)
+        let core = Zer0.inMemory(
+            firstSpaceName: "Personal",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
+        )
         _ = core.dispatch(action: .openTab(space: nil, url: nil, parent: nil))
         return (core, core.snapshot().activeTab!)
     }

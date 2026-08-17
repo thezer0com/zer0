@@ -1,17 +1,6 @@
 import SwiftUI
 import Zer0Core
 
-/// A question a page asked, waiting on an answer.
-///
-/// `SitePermissionPrompt` comes from the core and carries no identity, which
-/// `.sheet(item:)` needs. The request number is the identity: it is monotonic
-/// and never reused, so a sheet cannot be recycled for the next question and
-/// carry the last one's words for a frame.
-struct PendingSitePermission: Identifiable {
-    let prompt: SitePermissionPrompt
-    var id: UInt64 { prompt.request }
-}
-
 /// What a page is asking for, before it gets any of it.
 ///
 /// This sheet has one structural difference from `ExtensionConsentSheet`, and

@@ -28,9 +28,10 @@ first `open`. It is a development tool, not a distribution strategy.
 Two halves, with separate scripts:
 
 **Build.** `scripts/webkit/` pins a revision in `version.txt`
-(`WEBKIT_TAG=WebKit-7624.4.5.14.1`, verified 2026-08-08), does a shallow
-checkout and runs `Tools/Scripts/build-webkit`. None of it writes inside the
-repo: it goes to `~/.cache/zer0/webkit`, overridable with `ZER0_WEBKIT_DIR`.
+(`WEBKIT_TAG_STABLE=WebKit-7624.4.5.14.1`, verified 2026-08-08; renamed
+from `WEBKIT_TAG` by ADR-0124), does a shallow checkout and runs
+`Tools/Scripts/build-webkit`. None of it writes inside the repo: it goes
+to `~/.cache/zer0/webkit`, overridable with `ZER0_WEBKIT_DIR`.
 
 The tag is `WebKit-*` and not `main` on purpose: those tags are the source drops
 Apple shipped a Safari from, so each one built and survived a release cycle.

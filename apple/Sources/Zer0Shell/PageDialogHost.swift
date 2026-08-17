@@ -1,21 +1,25 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
 
-// Which isolation these carry, and why it is gated on the compiler, is the
-// story on `PageDialogHandler` just below.
-#if compiler(>=6.3)
+// One spelling, chosen by us rather than by any one SDK: the two WebKit SDKs
+// this tree builds against disagree about the @MainActor on these blocks
+// (26.3 leaves it off, 26.6 puts it on), the compiler version does not tell
+// them apart, and no signature matches both. So the witnesses that receive
+// them no longer try to match anything — the popup's sit outside the
+// conforming declaration and are @objc, dispatched by selector under either
+// SDK (see `ExtensionPopupDialogBase`). That frees these aliases to spell
+// what the browser means and what `PageDialogHandler` below holds: the
+// completions run on the main actor.
 typealias AlertCompletion = @MainActor @Sendable () -> Void
 typealias ConfirmCompletion = @MainActor @Sendable (Bool) -> Void
 typealias PromptCompletion = @MainActor @Sendable (String?) -> Void
 typealias FilesCompletion = @MainActor @Sendable ([URL]?) -> Void
-#else
-typealias AlertCompletion = @Sendable () -> Void
-typealias ConfirmCompletion = @Sendable (Bool) -> Void
-typealias PromptCompletion = @Sendable (String?) -> Void
-typealias FilesCompletion = @Sendable ([URL]?) -> Void
-#endif
 
 /// A completion handler the engine handed over and nobody has called yet.
 ///
@@ -24,17 +28,19 @@ typealias FilesCompletion = @Sendable ([URL]?) -> Void
 /// the mapping at every call site. [`answer(_:)`] is the mapping, and it exists
 /// exactly once.
 ///
-/// Every block is `@MainActor @Sendable` because that is how WebKit declares
-/// them: `WK_SWIFT_UI_ACTOR` on the header's block types.
+/// Every block is `@MainActor @Sendable` because that is where WebKit calls
+/// them from — the main thread — whatever the header of any one SDK says
+/// about it.
 ///
-/// The two SDKs this tree builds against disagree about that annotation, and
-/// in Swift 6 a witness whose parameter isolation differs from the
-/// requirement's — in either direction — is only a "nearly matches", which
-/// `-warnings-as-errors` fails: Xcode 26.6 (the author's) isolates the
-/// handler, the 26.3 one CI pins does not. So the four spellings at the top of
-/// this file are gated once, on the compiler — each Xcode ships its SDK with
-/// it — and every construction site wraps the handler in a closure literal,
-/// which takes its isolation from this enum under either spelling.
+/// The two SDKs this tree builds against disagree about that annotation (26.6
+/// carries `WK_SWIFT_UI_ACTOR` on these blocks, 26.3 does not), the compiler
+/// version does not track which one a build sees, and no single signature
+/// matches both. So nothing here tries to match: the popup's witnesses live
+/// outside the conforming declaration and are dispatched by selector (see
+/// `ExtensionPopupDialogBase`), and the aliases at the top of this file spell
+/// the completions the way this enum holds them. Every construction site
+/// wraps the handler in a closure literal, which takes its isolation from
+/// this enum.
 enum PageDialogHandler {
     case alert(@MainActor @Sendable () -> Void)
     case confirm(@MainActor @Sendable (Bool) -> Void)
@@ -299,13 +305,22 @@ struct FilePanelRequest: Equatable {
     let directories: Bool
 }
 
+/// The window a panel-having platform would hang its sheet on. Spelled once
+/// so the runner and the presenter agree on it; on iOS the refusing runner
+/// below ignores it, but the shape stays so callers are written once.
+#if canImport(AppKit)
+typealias PanelWindow = NSWindow
+#else
+typealias PanelWindow = UIWindow
+#endif
+
 /// Put a picker in front of somebody and report what came back.
 ///
 /// `nil` is a cancel, and it must arrive: a picker that answers nothing leaves
 /// the page's promise unsettled forever.
 typealias FilePanelRunner = @MainActor (
     FilePanelRequest,
-    NSWindow?,
+    PanelWindow?,
     @escaping @MainActor ([URL]?) -> Void
 ) -> Void
 
@@ -338,6 +353,11 @@ final class FilePanelPresenter {
 
     private let run: FilePanelRunner
 
+    /// The default a host gets. macOS puts the system panel up; iOS answers
+    /// `.cancelled` — this host has no file picker yet (`UIDocumentPicker` is
+    /// UI it has not built), and a cancel is the honest answer because it
+    /// settles the page's promise instead of leaving the control frozen on a
+    /// picker that will never appear.
     init(run: @escaping FilePanelRunner = FilePanelPresenter.systemPanel) {
         self.run = run
     }
@@ -349,7 +369,7 @@ final class FilePanelPresenter {
     /// happens to be in front.
     func present(
         _ dialogs: [PageDialog],
-        window: @escaping @MainActor (TabId) -> NSWindow?,
+        window: @escaping @MainActor (TabId) -> PanelWindow?,
         answer: @escaping @MainActor (UInt64, PageDialogAnswer) -> Void
     ) {
         for dialog in dialogs {
@@ -359,7 +379,7 @@ final class FilePanelPresenter {
 
     private func present(
         _ dialog: PageDialog,
-        window: @escaping @MainActor (TabId) -> NSWindow?,
+        window: @escaping @MainActor (TabId) -> PanelWindow?,
         answer: @escaping @MainActor (UInt64, PageDialogAnswer) -> Void
     ) {
         let allows: (multiple: Bool, directories: Bool)
@@ -392,12 +412,25 @@ final class FilePanelPresenter {
         }
     }
 
+    /// The iOS default: no picker, answered at once. A host that stayed quiet
+    /// would leave `<input type="file">` frozen forever. Spelled
+    /// `systemPanel` too, so the initialiser names one door on both platforms
+    /// and each platform's spelling of it lives beside its own doc.
+    #if !canImport(AppKit)
+    static func systemPanel(
+        _: FilePanelRequest, _: PanelWindow?, answer: @escaping @MainActor ([URL]?) -> Void
+    ) {
+        answer(nil)
+    }
+    #endif
+
     /// The real thing: an `NSOpenPanel` as a sheet on the page's own window.
     ///
     /// **Off this turn of the run loop, on purpose.** The call arrives inside
     /// WebKit's delegate callback with the web process waiting on the far end;
     /// putting an AppKit sheet up from in there is asking one thread to do two
     /// things. A turn later costs a frame nobody can see.
+    #if canImport(AppKit)
     static func systemPanel(
         _ asked: FilePanelRequest,
         window: NSWindow?,
@@ -435,6 +468,7 @@ final class FilePanelPresenter {
             }
         }
     }
+    #endif
 
     /// Whose file this is about to become.
     ///

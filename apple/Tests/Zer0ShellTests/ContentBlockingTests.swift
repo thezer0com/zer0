@@ -31,7 +31,11 @@ struct ContentBlockingTests {
 
     private func core() -> Zer0 {
         // In memory: these must not read or write the real session.
-        Zer0.inMemory(firstSpaceName: "Test", dataStoreId: UUID().uuidString)
+        Zer0.inMemory(
+            firstSpaceName: "Test",
+            dataStoreId: UUID().uuidString,
+            capabilities: HostCapabilities(extensionRuntime: false, pagePrinting: false)
+        )
     }
 
     // MARK: - The real compiler accepts what the core emits

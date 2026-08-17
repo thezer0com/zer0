@@ -148,6 +148,22 @@ pub struct Tab {
     pub playing_audio: bool,
     pub zoom_factor: f64,
     pub loading_complete: bool,
+    /// Whether the engine says this tab can go back and forward, as reported
+    /// by the host when the back/forward list moved.
+    ///
+    /// Core state rather than a question the shell puts to the engine, because
+    /// the answer is behaviour: it decides what ⌘[ does and what the chrome
+    /// offers, and two platforms could not disagree about it (ADR-0002). The
+    /// *reading* is the host's — only it can ask its engine — which is why
+    /// these arrive as [`crate::protocol::Action::NavigationStackChanged`]
+    /// rather than being derived here.
+    ///
+    /// `false` until the engine has spoken: for a fresh tab, and after a
+    /// restore, until the restored view reports. A stored `true` would be a
+    /// claim about an engine that has not said anything yet, which is why
+    /// neither the tab's constructor nor the store ever writes one.
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
     /// Why the last navigation failed, if it did. Cleared the moment another
     /// attempt starts, so a tab that reloaded successfully never keeps showing
     /// an error.
@@ -190,6 +206,8 @@ impl Tab {
             playing_audio: false,
             zoom_factor: Self::DEFAULT_ZOOM,
             loading_complete: true,
+            can_go_back: false,
+            can_go_forward: false,
             last_error: None,
             last_active_at: now,
         }
@@ -428,6 +446,11 @@ impl Browser {
                 t.pending_url = None;
                 t.loading_complete = true;
                 t.playing_audio = false;
+                // Nor can the engine's back/forward answer: it describes a
+                // view that no longer exists, and the restored view reports
+                // its own the moment it is built.
+                t.can_go_back = false;
+                t.can_go_forward = false;
                 // Nor can a failure outlive one. Every restored tab is loaded
                 // again on launch, so a stored error would be a claim about a
                 // network that may well be back, shown over a page that is

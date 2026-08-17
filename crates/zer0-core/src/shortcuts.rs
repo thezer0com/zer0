@@ -677,6 +677,22 @@ impl Keymap {
         before != self.bindings.len()
     }
 
+    /// Take a command out of the keymap entirely: every chord it had goes
+    /// with it, and nothing is left to advertise or to answer for it.
+    ///
+    /// Distinct from [`unbind`](Self::unbind), which takes a *chord* and
+    /// leaves the command reachable by its other chords. This exists for the
+    /// one case where a command is not a host's to offer —
+    /// [`UiCommand::PrintPage`] on a host that declared no page printing
+    /// (ADR-0118) — and there the binding must not exist rather than exist
+    /// and answer nothing, because one list feeds the press door, the menus
+    /// and the Settings screen alike: a row offering to rebind a chord to a
+    /// command no press can run is an affordance that lies, in its second
+    /// spelling.
+    pub fn retire(&mut self, command: &UiCommand) {
+        self.bindings.retain(|b| &b.command != command);
+    }
+
     pub fn reset(&mut self) {
         *self = Self::with_defaults();
     }

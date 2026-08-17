@@ -1,0 +1,29 @@
+[package]
+name = "zer0-linux"
+description = "The Linux host for zer0: a GTK shell that carries out the core's commands on WebKitGTK."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "zer0"
+path = "src/main.rs"
+
+[dependencies]
+zer0-core = { path = "../../crates/zer0-core" }
+# GTK4 and WebKitGTK's GTK4 API. `v4_14` because the mark widget draws through
+# `gsk::Path`, which the bindings only expose behind that feature (GSK gained
+# paths in 4.14) — and the older `v4_12` floor's reason, `load_from_string` in
+# place of the deprecated `load_from_data`, still holds, since the version
+# features are cumulative. Ubuntu 24.04's GTK 4.14 is the system floor this
+# asks pkg-config for.
+gtk4 = { version = "0.11", features = ["v4_14"] }
+webkit6 = "0.6"
+# Reading design/tokens.toml (ADR-0117): the same parser the core's config
+# reads, so one TOML dialect across the repo. `parse` only — this shell never
+# writes the file.
+toml_edit = { version = "0.25.13", default-features = false, features = ["parse"] }
+
+[lints]
+workspace = true

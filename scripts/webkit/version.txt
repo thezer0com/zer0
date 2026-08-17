@@ -1,21 +1,37 @@
-# The WebKit revision zer0 builds against.
+# The WebKit revisions zer0 builds against, one per channel (ADR-0124).
 #
 # Format: KEY=value, one per line. Blank lines and lines starting with # are
 # ignored. Nothing here is evaluated by a shell, so no quoting and no $VARS.
 #
-# WEBKIT_TAG must be a tag that exists in https://github.com/WebKit/WebKit.
-# Prefer a `WebKit-*` tag over a branch or over `main`: those tags are the
-# source drops Apple shipped a Safari from, so they built and passed a release
-# cycle. `main` is whatever landed in the last hour and regularly does not
-# build.
+# Two channels, two truths:
 #
-# How to pick / update the tag:
+#   WEBKIT_TAG_STABLE  the engine every stable release embeds. A `WebKit-*`
+#                      tag: the source drops Apple shipped a Safari from, so
+#                      each one built and survived a release cycle. Stable
+#                      never tracks a branch.
+#   WEBKIT_CANARY_REF  the branch canary tracks: main. Canary exists to meet
+#                      engine regressions early, and a source-drop tag is by
+#                      definition a release cycle behind them.
+#   WEBKIT_CANARY_SHA  the exact commit of that ref. The ref alone is a
+#                      moving target -- two checkouts an hour apart would
+#                      build different engines under the same name -- so the
+#                      sha is the pin and the ref says how the next sha is
+#                      resolved.
+#
+# This file stays the only place a revision is written down.
+# scripts/webkit/check-versions.sh holds its shape at the gate, and
+# .github/workflows/webkit-bump.yml rewrites the two pins weekly and opens
+# the pull request; merging it is what makes build-webkit.yml build both
+# caches.
+#
+# How to resolve the values by hand:
 #
 #   git ls-remote --tags --refs https://github.com/WebKit/WebKit.git \
 #     'refs/tags/WebKit-*' | sed 's|.*refs/tags/||' | sort -V | tail -20
+#   git ls-remote https://github.com/WebKit/WebKit.git refs/heads/main
 #
-# Then edit WEBKIT_TAG below and re-run ./fetch.sh (it is idempotent) followed
-# by ./build.sh. Nothing else in the repo hardcodes a version.
+# Then edit the values below and re-run ./fetch.sh (it is idempotent) followed
+# by ./build.sh.
 #
 # Correlating a tag with the WebKit you already have: read the system
 # framework's CFBundleVersion,
@@ -30,8 +46,11 @@
 #
 # Verified 2026-08-08: newest WebKit-* tag on WebKit/WebKit was
 # WebKit-7624.4.5.14.1.
+# Canary sha resolved 2026-08-16: main at 79cf236cfb8096f9bf07abe323ae8be87820c54f.
 
-WEBKIT_TAG=WebKit-7624.4.5.14.1
+WEBKIT_TAG_STABLE=WebKit-7624.4.5.14.1
+WEBKIT_CANARY_REF=main
+WEBKIT_CANARY_SHA=79cf236cfb8096f9bf07abe323ae8be87820c54f
 
 # Where the source tree and build products live. Always overridable from the
 # environment; this is only the default. Kept outside the repo on purpose: the

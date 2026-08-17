@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
@@ -143,6 +145,7 @@ final class DownloadHost: NSObject, WKDownloadDelegate {
         guard let live = byId[id] else { return }
         live.awaitingPanel = true
 
+        #if canImport(AppKit)
         let panel = NSSavePanel()
         panel.directoryURL = URL(fileURLWithPath: directory, isDirectory: true)
         panel.nameFieldStringValue = filename
@@ -174,6 +177,18 @@ final class DownloadHost: NSObject, WKDownloadDelegate {
                 MainActor.assumeIsolated { answer(response) }
             }
         }
+        #else
+        // iOS has no save panel, and this host has no file-furniture UI yet.
+        // The core asked where to put the file; on a platform with no Finder
+        // the honest answer is the app's own temporary container, answered at
+        // once rather than pausing a transfer on a question nobody can ask.
+        // `awaitingPanel` stays true across the emit so the guard in
+        // `decideDestination` sees a settled question, exactly as a panel
+        // mid-flight does on macOS.
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(Self.unusedFilename(filename))
+        emit?(.downloadDestinationChosen(id: id, path: url.path))
+        #endif
     }
 
     /// Stop it. Refusing the destination is how a download is declined before
@@ -324,6 +339,7 @@ final class DownloadHost: NSObject, WKDownloadDelegate {
     ///
     /// The platform knows where this is; the core decides whether to use it.
     static func systemDownloadDirectory() -> String {
+        #if canImport(AppKit)
         let url = FileManager.default
             .urls(for: .downloadsDirectory, in: .userDomainMask)
             .first
@@ -332,19 +348,71 @@ final class DownloadHost: NSObject, WKDownloadDelegate {
 
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url.path
+        #else
+        // iOS has neither a Downloads folder nor a home the sandbox will
+        // name. The destination every iOS download actually gets is the
+        // temporary container (see `ask`), so the default named here is that
+        // same path — one answer, rather than a default the core records and
+        // a destination the host writes that could disagree.
+        NSTemporaryDirectory()
+        #endif
     }
 
     /// Show the file in Finder, selected.
     ///
     /// More useful than opening it: half the time what you want is to drag it
     /// somewhere, and the other half you want to check it is really there.
+    ///
+    /// On iOS both this and `open` are the platform's refusal to have a
+    /// Finder at all: there is nothing to select a file *in*. The iOS answer
+    /// is a share sheet, which is UI and belongs to a future that decides it
+    /// (AGENTS.md: refusing is an answer; pretending to reveal is not).
     static func reveal(_ path: String) {
+        #if canImport(AppKit)
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        #else
+        _ = path
+        #endif
     }
 
     static func open(_ path: String) {
+        #if canImport(AppKit)
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        #else
+        _ = path
+        #endif
     }
+
+    #if !canImport(AppKit)
+    /// A name not already taken in the temporary container, spelled the way
+    /// the save panel's "file 2.pdf" does. The core's promise that a download
+    /// never writes over a file holds only if the asker does this, and on
+    /// macOS the panel is the asker — on iOS this is.
+    static func unusedFilename(_ filename: String) -> String {
+        let directory = NSTemporaryDirectory()
+        let base = (filename as NSString).deletingPathExtension
+        let ext = (filename as NSString).pathExtension
+        func taken(_ name: String) -> Bool {
+            // URL join, matching the caller in `ask`: `NSTemporaryDirectory()`
+            // ends in "/", so string concatenation spells the path with "//".
+            FileManager.default.fileExists(
+                atPath: URL(fileURLWithPath: directory, isDirectory: true)
+                    .appendingPathComponent(name)
+                    .path
+            )
+        }
+
+        guard taken(filename) else { return filename }
+        var attempt = 2
+        while true {
+            let candidate = ext.isEmpty
+                ? "\(base) \(attempt)"
+                : "\(base) \(attempt).\(ext)"
+            if !taken(candidate) { return candidate }
+            attempt += 1
+        }
+    }
+    #endif
 
     // MARK: - WKDownloadDelegate
 

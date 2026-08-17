@@ -596,6 +596,11 @@ fn storable_tab(tab: &Tab, states: &NavigationStates) -> StorableTab {
     kept.playing_audio = false;
     kept.loading_complete = true;
     kept.last_error = None;
+    // The engine's back/forward answer goes with them: it describes this
+    // run's view, and the restored view says its own. A `true` written here
+    // would be read back as a promise no engine has made yet.
+    kept.can_go_back = false;
+    kept.can_go_forward = false;
     // An address inside an extension is not written down, and its history goes
     // with it. The host in one is a uuid **WebKit** minted for a live context
     // and mints again on the next launch, so a stored one names nothing — it

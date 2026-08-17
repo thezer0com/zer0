@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import SwiftUI
 import Zer0Core
 
@@ -30,6 +32,11 @@ public enum WindowRole: Equatable, Sendable {
     /// Read from the window itself, not from its title. A title is copy, and
     /// copy gets localised — the day "Settings" is "Ajustes", a check against
     /// the string is a check that silently stops working.
+    ///
+    /// macOS-only because the question is an `NSWindow`'s to answer; a host
+    /// without that object has no windows to tell apart and every press is
+    /// the one window it has.
+    #if canImport(AppKit)
     @MainActor
     public init(of window: NSWindow?) {
         guard let window, let id = BrowserWindows.identity(of: window) else {
@@ -38,6 +45,7 @@ public enum WindowRole: Equatable, Sendable {
         }
         self = .browser(id)
     }
+    #endif
 
     /// Which window this press has to act on, or `nil` when it is not a browser
     /// window at all.
@@ -165,6 +173,7 @@ public enum KeyDisposition: Equatable, Sendable {
 /// it came from (ADR-0065). Weak keys, so a closed window leaves on its own: a
 /// table of strong references to dead windows would keep them alive and would
 /// answer "browser" for a window that is gone.
+#if canImport(AppKit)
 @MainActor
 enum BrowserWindows {
     private static let known = NSMapTable<NSWindow, WindowIdBox>.weakToStrongObjects()
@@ -320,6 +329,7 @@ final class BrowserWindowTag: NSView {
     // answered a hit test would be a transparent sheet over the page.
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
+#endif
 
 // MARK: - Which window a view is drawing
 
@@ -346,6 +356,7 @@ public extension EnvironmentValues {
 ///
 /// A reader rather than an argument because SwiftUI creates the view before the
 /// window exists, and `WindowGroup` has no way to hand one down.
+#if canImport(AppKit)
 public struct BrowserWindowIdentityReader: NSViewRepresentable {
     private let found: (WindowId?) -> Void
 
@@ -380,3 +391,4 @@ private final class IdentityReader: NSView {
 
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
+#endif

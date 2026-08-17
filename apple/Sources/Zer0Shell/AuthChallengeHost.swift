@@ -206,6 +206,13 @@ enum CertificateFacts {
     private static func validity(
         of certificate: SecCertificate
     ) -> (before: UInt64?, after: UInt64?) {
+        // `SecCertificateCopyValues` and the OID constants are macOS-only —
+        // measured against the iPhoneOS SDK, which has no public route to a
+        // certificate's dates at all. iOS reports the window it cannot read,
+        // which is the "could not measure" shape ADR-0094 already draws: the
+        // screen falls back to what it always said, and `pin` below simply
+        // does not pin a date it was not given.
+        #if canImport(AppKit)
         let oids = [kSecOIDX509V1ValidityNotBefore, kSecOIDX509V1ValidityNotAfter] as CFArray
         guard let values = SecCertificateCopyValues(certificate, oids, nil) as? [String: Any] else {
             return (nil, nil)
@@ -214,6 +221,10 @@ enum CertificateFacts {
             epochMs(values[kSecOIDX509V1ValidityNotBefore as String]),
             epochMs(values[kSecOIDX509V1ValidityNotAfter as String])
         )
+        #else
+        _ = certificate
+        return (nil, nil)
+        #endif
     }
 
     /// The value is a `CFAbsoluteTime` — seconds since 2001 — which is a
@@ -235,6 +246,14 @@ enum CertificateFacts {
     /// is answered by the platform's own SSL policy in `nameMatches`, which is
     /// the only thing that implements the wildcard rules correctly.
     private static func names(in certificate: SecCertificate) -> [String] {
+        // The SAN list is behind `SecCertificateCopyValues`, which is
+        // macOS-only (see `validity` above). iOS cannot enumerate the names,
+        // so it answers with the subject alone — the same fallback the no-SAN
+        // branch below has always been, for the same reason: better one true
+        // name than a list that says the certificate covers nothing. Whether
+        // the host *matches* is never this list's to answer; that is the SSL
+        // policy's call in `nameMatches` on every platform.
+        #if canImport(AppKit)
         guard let values = SecCertificateCopyValues(
             certificate, [kSecOIDSubjectAltName] as CFArray, nil
         ) as? [String: Any],
@@ -255,6 +274,9 @@ enum CertificateFacts {
             else { return nil }
             return value
         }
+        #else
+        return (SecCertificateCopySubjectSummary(certificate) as String?).map { [$0] } ?? []
+        #endif
     }
 
     private static func isSelfSigned(_ certificate: SecCertificate) -> Bool {

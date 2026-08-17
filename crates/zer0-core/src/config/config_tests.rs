@@ -597,7 +597,14 @@ fn the_path_prefers_an_explicit_override_then_xdg_then_home() {
 
 // MARK: - Writing without destroying a dotfiles setup
 
+// The two symlink tests below are unix only: the dotfiles shapes they build
+// (stow, chezmoi) are unix idioms and they are built with
+// `std::os::unix::fs::symlink`, which does not exist on msvc. On Windows the
+// write path is still exercised by every other test in this file; what cannot
+// be proved there is the link-preservation promise, and no Windows CI job
+// claims it.
 #[test]
+#[cfg(unix)]
 fn writing_through_a_symlinked_file_keeps_the_link_and_updates_the_checkout() {
     // The bug this exists to prevent: the ordinary write-a-temp-file-and-rename
     // recipe replaces the symlink with a regular file, orphaning the repository
@@ -631,6 +638,7 @@ fn writing_through_a_symlinked_file_keeps_the_link_and_updates_the_checkout() {
 }
 
 #[test]
+#[cfg(unix)]
 fn writing_through_a_symlinked_directory_lands_in_the_checkout() {
     // The commoner dotfiles shape: ~/.config/zer0 is the link, not the file.
     let dir = TempDir::new("symlink-dir");

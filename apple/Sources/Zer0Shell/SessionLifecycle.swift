@@ -1,6 +1,9 @@
+#if canImport(AppKit)
 import AppKit
 import SwiftUI
+#endif
 
+#if canImport(AppKit)
 /// Makes sure the session reaches disk, whatever way the browser goes away.
 ///
 /// `scenePhase` is not enough on macOS: ⌘Q does not reliably deliver a phase
@@ -135,9 +138,14 @@ public final class SessionLifecycle: NSObject, NSApplicationDelegate {
         return alert.runModal() == .alertFirstButtonReturn
     }
 }
+#endif
 
 /// Why a save is happening. Only used for logging, but a failed save with no
 /// reason attached is a support ticket nobody can answer.
+///
+/// Off the `#if` because the model — which both hosts compile — names the
+/// reason, and only the AppKit delegate that *triggers* saves on quit is
+/// macOS's alone.
 public enum SaveReason: String {
     case periodic
     case structuralChange

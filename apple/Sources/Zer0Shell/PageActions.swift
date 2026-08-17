@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import Observation
 import WebKit
@@ -16,9 +18,15 @@ extension EngineHost {
     ///
     /// The document is taken from the live DOM rather than re-fetched, so what
     /// you save is what you were looking at, script-rendered content included.
+    ///
+    /// macOS puts the document behind a save panel. iOS refuses: a host with
+    /// no file-furniture UI has nowhere to put a panel and nobody to answer
+    /// it, and the core's keymap gate (page printing is the same capability
+    /// family) is not this file's to consult — doing nothing is the refusal,
+    /// saved for the UI that decides what saving means on a phone.
     func savePage(_ tab: TabId, suggestedName: String) {
         guard let webView = webView(for: tab) else { return }
-
+        #if canImport(AppKit)
         webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
             MainActor.assumeIsolated {
                 guard let html = result as? String else {
@@ -34,6 +42,9 @@ extension EngineHost {
                 try? html.write(to: url, atomically: true, encoding: .utf8)
             }
         }
+        #else
+        _ = suggestedName
+        #endif
     }
 
     /// Fetch a URL as a file through `tab`'s web view, and answer with the id
@@ -62,8 +73,16 @@ extension EngineHost {
     /// on a window nobody could see and nobody could dismiss — the browser
     /// waiting on an answer to a question it never asked. There is no repair for
     /// "this page is in no window"; the panel is a sheet, and a sheet needs one.
+    ///
+    /// On iOS the answer is always `false`, out loud: `WKWebView` has no public
+    /// print call on iOS (`printOperation` is macOS-only, measured against the
+    /// iPhoneOS SDK), which is the same fact `HostCapabilities.pagePrinting:
+    /// false` declares at the core's door — the core refuses to emit the
+    /// command, and this is the second lock saying the same thing if one ever
+    /// arrives anyway.
     @discardableResult
     func printPage(_ tab: TabId) -> Bool {
+        #if canImport(AppKit)
         guard let webView = webView(for: tab), let window = webView.window else { return false }
         // AppKit queues a second sheet behind the first rather than refusing it,
         // and a print panel that surfaces minutes later under whatever is on
@@ -78,6 +97,10 @@ extension EngineHost {
         operation.view?.frame = webView.bounds
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         return true
+        #else
+        _ = tab
+        return false
+        #endif
     }
 
     /// Stop whatever is loading. Bound to Escape, like Chrome.

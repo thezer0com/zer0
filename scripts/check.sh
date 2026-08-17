@@ -56,6 +56,27 @@ echo "==> scratch paths"
 echo "==> sf symbol budget"
 ./scripts/sf-symbol-budget.sh
 
+# Also cheap, also before the compilers: the design tokens are data in
+# design/tokens.toml and the Swift shell is a hand-written consumer of them
+# (ADR-0117). This is what keeps the copy honest — one side edited without
+# the other is a red build here, not two platforms drifting apart quietly.
+echo "==> design tokens"
+./scripts/token-check.sh
+
+# Also cheap, also before the compilers: version.txt is the one place a WebKit
+# revision is written down, and common.sh plus three workflows parse it as
+# data -- a key renamed on one side is a channel silently building the other's
+# engine, because every cache key still resolves. The contract is held here
+# (ADR-0124).
+echo "==> webkit versions"
+./scripts/webkit/check-versions.sh
+
+# Also cheap, also before the compilers: the release policy is written in
+# two workflow files (ADR-0125) and nothing on a laptop executes a workflow
+# -- these greps are what keep "documented" meaning "still written down".
+echo "==> release policy"
+./scripts/check-release-policy.sh
+
 echo "==> cargo fmt"
 cargo fmt --all --check
 
@@ -88,13 +109,32 @@ if [[ "$(uname)" == "Darwin" ]]; then
 	# list must stay a filter the first line can name exactly: run one is
 	# "everything except these", so a new suite can never fall between the two
 	# runs — it lands in run one, which has headroom to spare.
-	readonly HEAVY='ExtensionApiTests|ExtensionPageTests|ExtensionHostTests|ExtensionDownloadRefusalTests|InstallOfferTests|ExtensionCompatTests|ExtensionStatusTests|ExtensionTabTests|ExtensionConsentTests|ExtensionConsentScrollTests|ExtensionPinTests|ExtensionPopupDialogTests|StoreInstallButtonStateTests|StoreInstallFallbackTests|StoreInstallHostRuleTests|StoreInstallMessageTests|StoreInstallRequestTests|SplitPersistenceTests|SplitShortcutTests|SplitTests|TabDragTests|UpdateChannelTests|UserAgentTests|UserAgentRecordTests|WebInspectorTests|WindowRoleTests|WindowTopTests|Zer0MarkTests|ZZ'
+	#
+	# 2026-08-16: the multi-host groundwork grew the suite past run one's
+	# headroom — 470 tests flaked red in 11 of 19 full runs, the victim
+	# varying per run (restored file:// loads failing "Cannot open file"
+	# transiently, download resume, autoplay policy), every failure a WebKit
+	# load starving past its deadline, green in isolation and green on the
+	# clean HEAD under synthetic load 13. ADR-0115 names this exact moment:
+	# "if run one starts failing as suites are added, the cliff has moved,
+	# not the machine: grow the second list." The fragile end-to-end victims
+	# moved here; PageProcessTests — the trigger — stays in run one, whose
+	# mesh is now the smaller one for it.
+	readonly HEAVY='DownloadEndToEndTests|DownloadResumeTests|EnginePolicyTests|NavigationRoundTripTests|NavigationStateTests|ExtensionApiTests|ExtensionPageTests|ExtensionHostTests|ExtensionDownloadRefusalTests|InstallOfferTests|ExtensionCompatTests|ExtensionStatusTests|ExtensionTabTests|ExtensionConsentTests|ExtensionConsentScrollTests|ExtensionPinTests|ExtensionPopupDialogTests|StoreInstallButtonStateTests|StoreInstallFallbackTests|StoreInstallHostRuleTests|StoreInstallMessageTests|StoreInstallRequestTests|SplitPersistenceTests|SplitShortcutTests|SplitTests|TabDragTests|UpdateChannelTests|UserAgentTests|UserAgentRecordTests|WebInspectorTests|WindowRoleTests|WindowTopTests|Zer0MarkTests|ZZ'
 	(cd apple &&
 		swift build &&
 		echo "==> swift test (main)" &&
 		swift test --skip "$HEAVY" &&
-		echo "==> swift test (extensions and windows)" &&
+		echo "==> swift test (second list)" &&
 		swift test --filter "$HEAVY")
+
+	# The shared set is locked from both sides. `swift build` above proves the
+	# macOS half; this proves the same files still compile against the iOS SDK
+	# — a shell file that drifts onto a macOS-only API fails here, at the gate,
+	# rather than in the iOS host's build a world away (ADR-0123). Typecheck
+	# only: no simulator, no Xcode, seconds.
+	echo "==> ios typecheck"
+	./apple/scripts/typecheck-ios.sh
 fi
 
 echo "all green"

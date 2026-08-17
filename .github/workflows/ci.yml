@@ -134,6 +134,82 @@ jobs:
       # attached, not a scheduling problem.
       - run: ./scripts/check.sh
 
+  # The iOS host's skeleton (ADR-0121): same core, same bindings, a second
+  # platform. ADR-0102's rule decides what lives here — building for the iOS
+  # Simulator is something a laptop without one installed cannot say, and
+  # nothing else in this file says it. No secrets, so forks stay green.
+  #
+  # The order of the two core builds is not stylistic. `build-core.sh` writes
+  # the Swift bindings both hosts compile — they are generated once, from the
+  # host's library, because `uniffi-bindgen --library` dlopens the archive it
+  # reads and a macOS process cannot load an iOS one. `build-core-ios.sh`
+  # refuses to run without them.
+  ios:
+    name: ios host skeleton
+    runs-on: macos-15
+    # The iOS leg compiles the whole core twice more (device + two simulator
+    # architectures); measured ~1m cold for the Rust half on the author's
+    # 14-core machine, so triple that for 3 cores and leave room for the
+    # Xcode build. A hung runner is worse than a red build (see `macos`).
+    timeout-minutes: 30
+    env:
+      # Same pin and for the same reasons as the `macos` job: a runner image
+      # update must not move the SDK under an ADR that cites its behaviour.
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Same refusal as the `macos` job: a missing pin is an error naming the
+      # manifest, never a silent fallback to whatever the image defaults to.
+      - name: toolchain
+        run: |
+          if [[ ! -d "$DEVELOPER_DIR" ]]; then
+            echo "::error::$DEVELOPER_DIR is gone. The macos-15 image dropped the pinned Xcode." >&2
+            echo "Pick another from the image manifest and pin it — do not fall back to the default:" >&2
+            echo "  https://github.com/actions/runner-images/blob/main/images/macos/macos-15-arm64-Readme.md" >&2
+            echo "What this image actually has:" >&2
+            ls -d /Applications/Xcode_*.app >&2 || true
+            exit 1
+          fi
+          xcodebuild -version
+          echo "iOS SDK $(xcrun --sdk iphonesimulator --show-sdk-version) at $(xcrun --sdk iphonesimulator --show-sdk-path)"
+
+      # `targets` rather than a `rustup target add` step: the action installs
+      # the toolchain and its targets as one named thing, and the iOS script's
+      # own idempotent `rustup target add` covers a laptop that never did.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Bindings first (shared with the macOS host), then the archives.
+      # Default profile: the bindings are the same in any profile, and the
+      # macOS library itself is this job's byproduct, not its product.
+      # `build-core-ios.sh` runs the SQLite floor guard on every slice it
+      # links — the iOS half of ADR-0114's revisit clause.
+      - run: ./apple/scripts/build-core.sh
+      - run: ./apple/scripts/build-core-ios.sh
+
+      # The shared-set gate (ADR-0123): every shell file both hosts compile,
+      # typechecked against the iOS SDK, before the app build spends a simulator
+      # slice on it. Fast and independent of the pbxproj — a file that joins
+      # the set joins the script's list or this step goes red.
+      - run: ./apple/scripts/typecheck-ios.sh
+
+      # `generic/platform=iOS Simulator` rather than a named device: a build
+      # does not need a simulator to exist, and a name is one more thing an
+      # image update can repossess. The proof the app *runs* is the author's
+      # laptop, where a real simulator booted and the process stayed up.
+      # `-quiet`, not a pipe: a pipeline would hand the exit status to the
+      # last command and a failed build could read green.
+      - run: xcodebuild -project apple/ios/Zer0IOS.xcodeproj -scheme Zer0IOS -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -quiet build
+
   # Proves the core stays free of Apple assumptions well before the Linux engine
   # host exists. Deliberately *not* `check.sh`: this runs the default feature set,
   # where `store`, `ext`, `config`, `prose`, `provider` and `ffi` are all off, and
@@ -156,4 +232,87 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  # The Linux host (ADR-0122): the core consumed as a crate, no binding layer,
+  # rendered by GTK and WebKitGTK. This job is the only place in the repository
+  # that can say the shell compiles — a machine needs GTK and WebKitGTK headers
+  # for that, which no other gate has installed, and `default-members` keeps
+  # this package out of the bare `cargo` commands the other jobs run.
+  #
+  # `fmt --all --check` in the linux-core job above already covers the shell:
+  # formatting needs no system libraries, only membership in the workspace.
+  #
+  # No secrets, so forks stay green like everywhere else in this file.
+  linux-shell:
+    name: linux host
+    runs-on: ubuntu-latest
+    # A cold `clippy` over the GTK stack is a few hundred crates; measured
+    # minutes on 4 cores, so half an hour is generous against a hung runner —
+    # which is worse than a red build for the same reason the macOS job says.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The headers the `-sys` crates ask pkg-config for. `libwebkitgtk-6.0-dev`
+      # is the GTK4 API of WebKitGTK, which the `webkit6` crate binds; both
+      # packages are in the archive of the ubuntu-24.04 image `ubuntu-latest`
+      # resolves to today — read from the image's package list, not measured
+      # on a runner, so the first red run here re-checks that sentence. One
+      # `apt-get update` because a bare `install` reads a package list a
+      # runner-image rebuild may have pruned.
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      # Clippy rather than a plain check: it compiles everything a check
+      # compiles and holds the shell to the workspace lints, which is the
+      # claim this job makes — that the third shell obeys the same rules.
+      - run: cargo clippy -p zer0-linux --all-targets -- -D warnings
+      # The unit tests this package carries — the TOML consumer, and the
+      # keysym door the keymap's non-printable chords arrive through — have
+      # never run in any gate: they need GTK to compile, and this is the only
+      # job that has it. Headless is enough: the tests construct constants
+      # and ask the core questions, no display is opened.
+      - run: cargo test -p zer0-linux
+
+  # The Windows half of "the core has no platform in it". `cfg(not(unix))`
+  # doors exist — `native_messaging`'s `is_executable`, `config`'s
+  # `copy_permissions` — and until now no runner this repository trusts ever
+  # compiled them, so "the core builds on Windows" was a claim with nothing
+  # that could go red. This job is that red light.
+  #
+  # Two cargo commands rather than linux-core's three: fmt and clippy lint
+  # the same source on the other core jobs, and this job's claim is about
+  # msvc, not style. The check below compiles every feature and every test
+  # for windows-msvc — including the `store` and `ffi` halves no author
+  # machine can cross-check, because bundled SQLite wants an MSVC C compiler
+  # (the pure-Rust features were cross-checked locally; these two are proven
+  # here or nowhere). The bare `cargo test` then runs the same
+  # default-feature suite linux-core runs: same commands, a third kernel,
+  # and a suite that passes on only two of three is lying about the third.
+  windows-core:
+    name: core only (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Check rather than test for the all-features half: the feature'd test
+      # suites' behaviour on Windows has been observed by no machine yet, and
+      # this job is born claiming only what can be defended — everything
+      # compiles for msvc, the bare suite passes. Flipping the second command
+      # to `--all-features` is the next claim, made after this one is green.
+      - run: cargo check -p zer0-core --all-features --all-targets
       - run: cargo test

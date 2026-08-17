@@ -43,6 +43,13 @@ struct FindBar: View {
         /// be seen. A full point here reads as a frame drawn around the bar.
         /// The install banner's capsule is the same case at the same weight.
         static let edge: CGFloat = 0.5
+        /// The leading search glyph. Lucide's search spends the back third of
+        /// its box on the handle, so at the old SF Symbol's size the lens
+        /// itself read smaller than the text it introduces; one point of side
+        /// buys the lens back without outgrowing the field beside it.
+        static let searchSide: CGFloat = 14
+        /// The found checkmark, inline with caption-sized text.
+        static let checkSide: CGFloat = 11
     }
 
     private var status: Status {
@@ -54,9 +61,8 @@ struct FindBar: View {
 
     var body: some View {
         HStack(spacing: Design.Space.tight) {
-            Image(systemName: "magnifyingglass")
+            LucideGlyph(icon: .search, side: Metrics.searchSide)
                 .foregroundStyle(.secondary)
-                .font(Design.Text.detail)
 
             CommandBarField(
                 text: Binding(get: { query }, set: { value in
@@ -78,22 +84,25 @@ struct FindBar: View {
 
             Divider().hairline().frame(height: Metrics.dividerHeight)
 
+            // The three control glyphs take `Design.Glyph.control`: each is
+            // the whole of a borderless button's label in a strip, which is
+            // that token's exact situation — no text beside it to match.
             Button { find(forwards: false) } label: {
-                Image(systemName: "chevron.up")
+                LucideGlyph(icon: .chevronUp, side: Design.Glyph.control)
             }
             .disabled(query.isEmpty)
             .help(tooltip("Previous match", .findPrevious))
             .accessibilityLabel("Previous match")
 
             Button { find(forwards: true) } label: {
-                Image(systemName: "chevron.down")
+                LucideGlyph(icon: .chevronDown, side: Design.Glyph.control)
             }
             .disabled(query.isEmpty)
             .help(tooltip("Next match", .findNext))
             .accessibilityLabel("Next match")
 
             Button { model.closeFind() } label: {
-                Image(systemName: "xmark")
+                LucideGlyph(icon: .x, side: Design.Glyph.control)
             }
             .help("Close find bar (⎋)")
             .accessibilityLabel("Close find bar")
@@ -129,7 +138,7 @@ struct FindBar: View {
             ProgressView().controlSize(.mini).scaleEffect(0.7)
         case .found:
             HStack(spacing: Design.Space.hair) {
-                Image(systemName: "checkmark")
+                LucideGlyph(icon: .check, side: Metrics.checkSide)
                 Text("Found")
             }
             .foregroundStyle(.secondary)

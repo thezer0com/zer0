@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import WebKit
 import Zer0Core
@@ -177,6 +179,7 @@ final class ExtensionApiHost: NSObject, WKURLSchemeHandler {
     /// about `.keyDown` alone would call somebody reading with a mouse in their
     /// hand idle.
     private static func hostFacts() -> HostFacts {
+        #if canImport(AppKit)
         let seconds = CGEventSource.secondsSinceLastEventType(
             .combinedSessionState,
             eventType: CGEventType(rawValue: ~UInt32(0)) ?? .null
@@ -187,6 +190,15 @@ final class ExtensionApiHost: NSObject, WKURLSchemeHandler {
             secondsSinceInput: UInt64(max(0, seconds)),
             screenLocked: locked
         )
+        #else
+        // The event-system calls above are macOS's and iOS has no equivalent
+        // a third-party app may read. The answers are still facts rather than
+        // guesses, by construction: an iOS app that is suspended touches
+        // nothing and answers nothing, so code running here is in the
+        // foreground on a screen that is unlocked — which is exactly what
+        // reporting "just used, not locked" says.
+        return HostFacts(secondsSinceInput: 0, screenLocked: false)
+        #endif
     }
 
     // MARK: - Reading the request

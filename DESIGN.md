@@ -18,6 +18,13 @@ If a number is not in there, it is either a genuinely local dimension (see
 [Local metrics](#local-metrics-the-honest-exception)) or it is debt (see
 [Debt](#12-debt-what-the-views-do-that-the-system-does-not-say)).
 
+The values are also stated as data, in `design/tokens.toml` — one
+machine-readable file the shells read instead of re-transcribing this
+document's tables, which is what keeps five platforms from drifting apart
+(ADR-0117). `scripts/token-check.sh` runs at the gate and proves the Swift
+consumer agrees with it value by value. This document stays the record of
+*why* each token exists; the TOML is the *what*.
+
 ---
 
 ## 1. Where a decision lives
@@ -87,7 +94,9 @@ stamping its own decision) and **randomness** (`CreateSpace { data_store_id }`).
 
 Every value below is from `DesignSystem.swift`. The criterion column is the
 part that matters: a token without a criterion is a magic number nobody knows
-when to reach for.
+when to reach for. The same values are stated as data in `design/tokens.toml`
+and held there by `scripts/token-check.sh` at the gate (ADR-0117) — changed on
+one side only, the build goes red naming the token.
 
 ### Space — a 4pt rhythm
 
@@ -115,6 +124,12 @@ the size of the new-space button's hit area.
 > *"Built on text styles rather than fixed point sizes, so the whole UI follows
 > the system's text size instead of staying at 11pt for someone who cannot read
 > 11pt."*
+
+What each style resolves to in points is data now, not prose: `design/tokens.toml`
+`[type]` carries token → pt, weight and tracking, measured on this platform
+(macOS 27.0, default text size) for the other shells to map onto their own
+scales. The Swift side names the style; the platform supplies the number, which
+is why the gate does not compare those.
 
 | Token | Built on | Where |
 |---|---|---|
@@ -190,7 +205,7 @@ the consent sheet paints its headings by risk tier.
 |---|---|---|
 | `icon` | 34 | The SF Symbol at the head of an empty state (`EmptyStateSymbol`). |
 | `mark` | 72 | The zer0 mark, on the two screens where it *is* the screen. *"Well clear of the floor ADR-0040 settles at 32 rendered pixels."* |
-| `control` | 13 | An SF Symbol that is the whole of a control's label, in a strip sized for the window's own controls. Sized to the strip rather than to a line of text, because there is no text beside it to match. One use: `WindowChrome`'s sidebar toggle. |
+| `control` | 13 | A glyph that is the whole of a control's label, in a strip sized for the window's own controls. Sized to the strip rather than to a line of text, because there is no text beside it to match. Two uses while the migration runs: `WindowChrome`'s sidebar toggle (SF Symbols, not yet migrated) and the find bar's three buttons (the licensed set). |
 
 ### Stroke — line weights, also outside the rhythm
 
@@ -200,6 +215,11 @@ the consent sheet paints its headings by risk tier.
 |---|---|---|
 | `hairline` | 1 | *"A border that should be seen and not noticed."* The lifted drag card's edge, the offered-space chip's dashed outline, the critical-permission group's border. |
 | `insertion` | 2 | *"The line a drag draws where the row is about to land. Heavier than a border because it is the whole answer to 'where does this go'."* Also the target space chip's solid border, which is the same answer in another shape. |
+
+The icon set carries its own stroke and it is not a third token: Lucide is
+drawn at 2 of its 24pt grid, so `LucideGlyph` strokes at `side × 2/24` — which
+is `insertion` at a side of 24 and keeps the set's weight at every other side
+(ADR-0116).
 
 ### Radius
 
@@ -322,7 +342,7 @@ sentence that justifies it:
 |---|---|
 | `CommandBar` | `width` 620 · `fieldHeight` 28 · `listMaxHeight` 320 · `iconColumn` 18 |
 | `WindowChrome` | `height` 38 · `trafficLightWidth` 78 · `titleWidth` 340 · `actionsWidth` 164 |
-| `FindBar` | `fieldWidth` 200 · `fieldHeight` 20 · `dividerHeight` 16 · `edge` 0.5 |
+| `FindBar` | `fieldWidth` 200 · `fieldHeight` 20 · `dividerHeight` 16 · `edge` 0.5 · `searchSide` 14 · `checkSide` 11 — the strip's own icon sides; its three buttons wear `Design.Glyph.control`. The first component migrated off SF Symbols onto the licensed set (ADR-0116). |
 | `InstallBanner` | `width` 460 · `iconColumn` 20 · `edge` 0.5 |
 | `ExtensionConsentSheet` | `width` 480 · `maxHeight` 620 · `mark` 26 · `markColumn` 32 · `riskColumn` 20 · `fade` 28 |
 | `PageDialogSheet` | `width` 420 · `mark` 30 · `markColumn` 36 · `fieldHeight` 24 — the first three deliberately identical to `SitePermissionSheet`'s, because the two are the same object: a panel a *page* summoned. Two widths would read as two products (ADR-0089). |
@@ -662,6 +682,9 @@ and worn once, as `.zer0Palette()` at the root of each of the three windows.
 Every token is a `Swatch` — bytes, so a ratio can be recomputed — surfaced as
 **one `Color` that resolves against the drawing appearance**. No view reads
 `colorScheme` to pick a hex, which is what keeps the Theme setting honest.
+The hexes themselves are stated as data in `design/tokens.toml` `[palette]`,
+checked against these files by the same gate as the rest of the tokens
+(ADR-0117).
 
 | Token | Light | Dark | What it is |
 |---|---|---|---|

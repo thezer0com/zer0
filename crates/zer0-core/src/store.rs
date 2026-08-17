@@ -805,6 +805,12 @@ impl SessionStore for Store {
             "block_unprompted_windows",
             &prefs.block_unprompted_windows.to_string(),
         )?;
+        set_meta(
+            &tx,
+            "background_throttling",
+            &prefs.background_throttling.to_string(),
+        )?;
+        set_meta(&tx, "https_first", &prefs.https_first.to_string())?;
 
         tx.execute("DELETE FROM blocking_exceptions", [])?;
         for host in &prefs.blocking_exceptions {
@@ -1087,6 +1093,12 @@ impl Store {
                 playing_audio: false,
                 zoom_factor: row.get(7)?,
                 loading_complete: true,
+                // Deliberately not columns, like the tint: they describe the
+                // engine view this run built, and the restored view reports
+                // its own answer when it commits. A stored `true` would be a
+                // claim about an engine that has not said anything yet.
+                can_go_back: false,
+                can_go_forward: false,
                 // Deliberately not a column. A restored tab is loaded again on
                 // launch, so last night's "you are offline" would be shown
                 // over a page that is about to load fine. The page gets to
@@ -1393,6 +1405,17 @@ impl Store {
             get_meta(&self.conn, "block_unprompted_windows")?.and_then(|v| v.parse().ok())
         {
             prefs.block_unprompted_windows = v;
+        }
+        // Same shape once more. These two have no row a person can change yet,
+        // but they are stored like every other preference so the day a host or
+        // a Settings row wants to move them, storage is not the half that is
+        // missing (ADR-0120).
+        if let Some(v) = get_meta(&self.conn, "background_throttling")?.and_then(|v| v.parse().ok())
+        {
+            prefs.background_throttling = v;
+        }
+        if let Some(v) = get_meta(&self.conn, "https_first")?.and_then(|v| v.parse().ok()) {
+            prefs.https_first = v;
         }
 
         let mut stmt = self.conn.prepare("SELECT host FROM blocking_exceptions")?;

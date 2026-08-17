@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import WebKit
 
@@ -178,12 +180,18 @@ enum WebInspector {
     /// person could have seen, rather than against WebKit's opinion of itself.
     /// `isVisible` was `true` in the arrangement where the frontend was buried
     /// under the page and nothing was on screen; a window is not.
+    ///
+    /// macOS-only because the inspector itself is: on iOS `_WKInspector` does
+    /// not exist and `inspector(for:)` answers `nil`, so there is no window to
+    /// ask about and no `NSWindow` to name.
+    #if canImport(AppKit)
     static func window(for webView: WKWebView) -> NSWindow? {
         guard let inspector = inspector(for: webView),
               let frontend = inspector.value(forKey: "inspectorWebView") as? NSView
         else { return nil }
         return frontend.window
     }
+    #endif
 
     /// `isVisible` is a `BOOL` and so cannot come back through `perform`, which
     /// only returns objects. KVC finds the same getter and boxes it.

@@ -2,27 +2,6 @@ import AppKit
 import SwiftUI
 import Zer0Core
 
-/// Field access, not policy.
-///
-/// A uniffi record carries no methods across the bridge, and asking the core
-/// "is this tab in the split" once per sidebar row would be an FFI crossing to
-/// answer a comparison. Anything that *decides* something — where the divider
-/// may go, when a split ends — stays in Rust.
-extension Split {
-    func contains(_ tab: TabId) -> Bool {
-        leading == tab || trailing == tab
-    }
-
-    /// The pane that is not `tab`, or nil if `tab` is not in this split.
-    func other(_ tab: TabId) -> TabId? {
-        switch tab {
-        case leading: trailing
-        case trailing: leading
-        default: nil
-        }
-    }
-}
-
 /// One tab's area: the page, or the explanation for why there is no page.
 ///
 /// Extracted so a pane and the whole window are the same view rather than two

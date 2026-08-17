@@ -54,7 +54,18 @@ func makeMcpLink(
                 detail: "\(server.id) runs a program on this Mac, and names no command."
             )
         }
+        #if canImport(AppKit)
         return try StdioLink(command: command, args: server.args, environment: environment)
+        #else
+        // `StdioLink` is `Process`, which the iOS SDK has not got and whose
+        // sandbox would refuse anyway. Refused in this function's own
+        // vocabulary rather than dropped: the server is configured, the host
+        // cannot reach it, and the consent screen says so instead of the
+        // connection dying without a sentence.
+        throw MisconfiguredServer(
+            detail: "\(server.id) runs a program, which this device cannot start."
+        )
+        #endif
 
     case .http:
         guard let address = server.url, !address.isEmpty else {

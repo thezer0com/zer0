@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import Observation
 import Zer0Core
@@ -233,8 +237,15 @@ public final class ConfigHost {
     }
 
     /// Reveal the file, so "your settings are in a file" ends somewhere.
+    ///
+    /// On iOS there is no Finder to reveal in and no Files-app guarantee about
+    /// where the sandbox's documents live from the person's side of the
+    /// screen; the honest answer is to do nothing here and let the iOS UI that
+    /// one day shows this file decide how a person reaches it.
     public func revealInFinder() {
+        #if canImport(AppKit)
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        #endif
     }
 
     // MARK: - Watching
@@ -305,8 +316,16 @@ public final class ConfigHost {
     /// The backstop. Watches do not fire on every filesystem, and a `git pull`
     /// while zer0 was behind another window still has to land.
     private func observeFocus() {
+        // `didBecomeActive` is a real equivalent on both platforms, not a
+        // stand-in: each is the system saying "this app is in front again",
+        // which is the whole of what the backstop needs.
+        #if canImport(AppKit)
+        let name = NSApplication.didBecomeActiveNotification
+        #else
+        let name = UIApplication.didBecomeActiveNotification
+        #endif
         focusObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
+            forName: name,
             object: nil,
             queue: .main
         ) { [weak self] _ in

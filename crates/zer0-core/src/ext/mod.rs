@@ -32,7 +32,10 @@
 //! hostile input, and unpacking runs under [`UnpackLimits`].
 
 mod compat;
-mod crx;
+// `pub(crate)` only so the FFI door's tests can build a genuinely signed
+// package through the same `test_support` this module's own tests use, rather
+// than a second builder that could drift from what the parser accepts.
+pub(crate) mod crx;
 mod i18n;
 mod manifest;
 
