@@ -7,13 +7,15 @@ import Foundation
 import WebKit
 import Zer0Core
 
-// One spelling, chosen by us rather than by any one SDK: the two WebKit SDKs
-// this tree builds against disagree about the @MainActor on these blocks
-// (26.3 leaves it off, 26.6 puts it on), the compiler version does not tell
-// them apart, and no signature matches both. So the witnesses that receive
-// them no longer try to match anything — the popup's sit outside the
-// conforming declaration and are @objc, dispatched by selector under either
-// SDK (see `ExtensionPopupDialogBase`). That frees these aliases to spell
+// One spelling, chosen by us rather than by any one SDK: the WebKit SDKs this
+// tree builds against disagree about the @MainActor on these blocks, per
+// method rather than per SDK — measured on the CI runner's macOS 26.2 SDK,
+// `prompt` and the open panel carried it and `alert` and `confirm` did not —
+// the compiler version does not tell them apart, and no signature matches
+// every one. So every witness that receives them has stopped trying to match
+// anything: all seven sit outside their conforming declaration and are @objc,
+// dispatched by selector under any spelling (`PageDialogDelegateBase`,
+// `ExtensionPopupDialogBase`, ADR-0127). That frees these aliases to spell
 // what the browser means and what `PageDialogHandler` below holds: the
 // completions run on the main actor.
 typealias AlertCompletion = @MainActor @Sendable () -> Void
@@ -32,15 +34,15 @@ typealias FilesCompletion = @MainActor @Sendable ([URL]?) -> Void
 /// them from — the main thread — whatever the header of any one SDK says
 /// about it.
 ///
-/// The two SDKs this tree builds against disagree about that annotation (26.6
-/// carries `WK_SWIFT_UI_ACTOR` on these blocks, 26.3 does not), the compiler
-/// version does not track which one a build sees, and no single signature
-/// matches both. So nothing here tries to match: the popup's witnesses live
-/// outside the conforming declaration and are dispatched by selector (see
-/// `ExtensionPopupDialogBase`), and the aliases at the top of this file spell
-/// the completions the way this enum holds them. Every construction site
-/// wraps the handler in a closure literal, which takes its isolation from
-/// this enum.
+/// The SDKs this tree builds against disagree about that annotation — which of
+/// these blocks carries `WK_SWIFT_UI_ACTOR` varies by method as well as by
+/// SDK — the compiler version does not track which one a build sees, and no
+/// single signature matches every one. So nothing here tries to match: every
+/// witness lives outside its conforming declaration and is dispatched by
+/// selector (`PageDialogDelegateBase`, `ExtensionPopupDialogBase`), and the
+/// aliases at the top of this file spell the completions the way this enum
+/// holds them. Every construction site wraps the handler in a closure literal,
+/// which takes its isolation from this enum.
 enum PageDialogHandler {
     case alert(@MainActor @Sendable () -> Void)
     case confirm(@MainActor @Sendable (Bool) -> Void)
@@ -127,21 +129,60 @@ final class PageDialogLedger {
 
 /// `alert()`, `confirm()`, `prompt()` and `<input type="file">` (ADR-0089).
 ///
-/// All four are on `SitePermissionDelegate` because `WKWebView.uiDelegate` is
-/// one property and a view has one of them. They are in a file of their own
+/// All four end up on `SitePermissionDelegate` because `WKWebView.uiDelegate`
+/// is one property and a view has one of them. They are in a file of their own
 /// because they are a different decision from the camera and from
 /// `window.open`.
+///
+/// **They are on a base class, `@objc`, and dispatched by selector**
+/// (ADR-0127, superseding ADR-0126's decision to leave them in an extension).
+/// The SDKs this tree builds against disagree about the `@MainActor` on these
+/// completions, per method rather than per SDK: measured on the CI runner's
+/// macOS 26.2 SDK, `prompt` and the open panel matched the aliases above and
+/// `alert` and `confirm` did not, so those two compiled with no diagnostic at
+/// all, silently lost `@objc`, and were never called — `alert()` drew nothing
+/// and `confirm()` was answered `false` by nobody, which is the exact state
+/// ADR-0089 ended. A base class is invisible to the witness matcher and
+/// visible to the runtime, so no signature is ever compared. See
+/// `ExtensionPopupDialogBase` for the probes behind the mechanism.
 ///
 /// **Nothing here decides anything.** Not whether the tab is one you are
 /// looking at, not whether this page has already been told to stop, not how
 /// much of the page's text is shown, not who gets named. All of that is in
 /// `page_dialogs.rs`, where it is tested without a window and where a Linux
 /// host inherits it.
-extension SitePermissionDelegate {
+@MainActor
+class PageDialogDelegateBase: NSObject {
+    /// Which tab asked. On the base rather than the subclass because the four
+    /// methods that need it live here now, and `PopupHost`'s two read it
+    /// through the inheritance like any other property.
+    let tab: TabId
+    /// The handlers the four are waiting on. On the host rather than here for
+    /// the reason `SitePermissionLedger` is: a web view can be destroyed while
+    /// the core is still deciding, and a handler that went with the view is a
+    /// tab frozen inside `alert()`.
+    let dialogs: PageDialogLedger
+    let emit: @MainActor (Action) -> Void
+
+    init(
+        tab: TabId,
+        dialogs: PageDialogLedger,
+        emit: @escaping @MainActor (Action) -> Void
+    ) {
+        self.tab = tab
+        self.dialogs = dialogs
+        self.emit = emit
+    }
+
+    // `@objc` is what makes the placement worth anything: without it the
+    // runtime has no method to find, with it the selector is registered
+    // whatever the building SDK's header says about the block's isolation.
+
     /// `alert(message)`.
     ///
     /// Measured before this existed: unimplemented, the call returned in 94ms
     /// having drawn nothing at all.
+    @objc
     func webView(
         _: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
@@ -161,6 +202,7 @@ extension SitePermissionDelegate {
     /// **The dangerous one.** Measured before this existed: the call returned
     /// `false`, which is a Cancel nobody pressed and nothing on screen saying
     /// so.
+    @objc
     func webView(
         _: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
@@ -178,6 +220,7 @@ extension SitePermissionDelegate {
     /// `prompt(message, default)`.
     ///
     /// Measured before this existed: the call returned `null`.
+    @objc
     func webView(
         _: WKWebView,
         runJavaScriptTextInputPanelWithPrompt prompt: String,
@@ -203,6 +246,14 @@ extension SitePermissionDelegate {
     /// on. **It does not carry `accept`**: there is no public property for the
     /// control's type filter, so this browser cannot narrow the panel and does
     /// not pretend to (ADR-0018).
+    ///
+    /// The selector is spelled out because this is the one of the four whose
+    /// Objective-C name Swift cannot infer: WebKit's argument is
+    /// `runOpenPanelWithParameters:` and the Swift label WebKit's own header
+    /// asks for is `runOpenPanelWith`. Inferring from the label registers a
+    /// selector nothing ever sends, which is a file control that opens nothing
+    /// — the state ADR-0089 measured and ended.
+    @objc(webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:)
     func webView(
         _: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
@@ -249,7 +300,7 @@ extension SitePermissionDelegate {
     /// advert inside a page you trust is the advert talking, and the panel has
     /// to name the advert.
     static func source(of frame: WKFrameInfo) -> PageDialogSource {
-        .frame(origin: reported(frame.securityOrigin))
+        .frame(origin: reportedOrigin(frame.securityOrigin))
     }
 }
 

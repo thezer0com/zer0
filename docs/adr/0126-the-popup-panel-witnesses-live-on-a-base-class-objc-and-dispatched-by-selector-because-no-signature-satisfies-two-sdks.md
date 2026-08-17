@@ -63,6 +63,15 @@ ADR-0030). Moving them to a base class would split the delegate's state
 between two classes; that price is paid the day a second host forces it, not
 before.
 
+> **Superseded by ADR-0127.** That day was the next one. The first green
+> build on the mismatched SDK measured the disagreement to be **per method
+> rather than per SDK** — `prompt` and the open panel matched, `alert` and
+> `confirm` did not, in one build with no diagnostic — so two of these four
+> were dead and two were not. The reading this paragraph rests on is
+> refuted; all four have moved to `PageDialogDelegateBase`, and the state
+> split is paid. The rest of this ADR — the mechanism, the four probed
+> placements, and the popup's three witnesses — stands.
+
 ## Consequences
 
 - One source file builds green under both measured SDK spellings, under
@@ -100,7 +109,11 @@ that compiles everywhere and is called nowhere. Two doors were measured:
 - A third spelling of these blocks, or `WKUIDelegate` ceasing to be an
   `@objc` protocol, re-measures the premise — selector dispatch is the whole
   mechanism and was verified, not assumed.
-- The day a second host's SDK disagrees with the aliases in a way the page
+- ~~The day a second host's SDK disagrees with the aliases in a way the page
   tests cannot see, `SitePermissionDelegate`'s four witnesses move to this
   same layout, and the state split that was declined here is the cost
-  accepted then.
+  accepted then.~~ **Done, and the condition was wrong.** The page tests saw
+  it perfectly well — that is how it was found — and the four moved anyway,
+  because a mismatch that takes out two methods out of four and leaves no
+  diagnostic is not a spelling this layout should keep surviving by luck
+  (ADR-0127).

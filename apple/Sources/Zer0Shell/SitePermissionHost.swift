@@ -75,20 +75,19 @@ extension SiteDecision {
 /// pressed — `prompt()` with `null`, and a file control by never opening a
 /// panel at all. Adding a method to this protocol without implementing it puts
 /// the browser straight back there, silently.
+///
+/// **The conformance is here and the page-dialog panels are one class below
+/// it**, on `PageDialogDelegateBase`, and that gap is load-bearing rather than
+/// tidy: a witness the compiler compares against a WebKit header it disagrees
+/// with is dropped silently (ADR-0127). Nothing else about this object cares,
+/// because `tab`, `dialogs` and `emit` are inherited and read the same way.
 @MainActor
-final class SitePermissionDelegate: NSObject, WKUIDelegate {
-    let tab: TabId
+final class SitePermissionDelegate: PageDialogDelegateBase, WKUIDelegate {
     private let ledger: SitePermissionLedger
-    /// The handlers `alert()`, `confirm()`, `prompt()` and the file control are
-    /// waiting on. On the host rather than here for the reason `ledger` is: a
-    /// web view can be destroyed while the core is still deciding, and a
-    /// handler that went with the view is a tab frozen inside `alert()`.
-    let dialogs: PageDialogLedger
     /// Hand a configuration the engine built to whoever can turn it into a tab.
     /// A closure rather than a reference, for the reason every other seam here
     /// is one: this object reports and does not decide.
     let openWindow: PopupOpener
-    let emit: @MainActor (Action) -> Void
 
     init(
         tab: TabId,
@@ -97,11 +96,9 @@ final class SitePermissionDelegate: NSObject, WKUIDelegate {
         openWindow: @escaping PopupOpener,
         emit: @escaping @MainActor (Action) -> Void
     ) {
-        self.tab = tab
         self.ledger = ledger
-        self.dialogs = dialogs
         self.openWindow = openWindow
-        self.emit = emit
+        super.init(tab: tab, dialogs: dialogs, emit: emit)
     }
 
     /// The only site-permission callback macOS has.
@@ -129,12 +126,12 @@ final class SitePermissionDelegate: NSObject, WKUIDelegate {
             // The frame that actually called `getUserMedia`. The grant goes to
             // whoever asked, which for an embedded widget is not the site whose
             // name is in the address bar.
-            origin: Self.reported(frame.securityOrigin),
+            origin: reportedOrigin(frame.securityOrigin),
             // What the tab is showing. For a main-frame request these are the
             // same and the core says nothing about embedding; for anything else
             // this is what lets it name the page the asking frame was inside.
             pageOrigin: frame.isMainFrame
-                ? Self.reported(origin)
+                ? reportedOrigin(origin)
                 : Self.pageOrigin(of: webView, fallingBackTo: origin),
             capture: Self.capture(type),
             // The core has no clock (ADR-0002), and the window this is measured
@@ -144,30 +141,13 @@ final class SitePermissionDelegate: NSObject, WKUIDelegate {
         )))
     }
 
-    /// A `WKSecurityOrigin` as three fields, uninterpreted.
-    ///
-    /// Nothing is normalised here. Whether `https://x` and `https://x:443` are
-    /// one site or two is a decision, and it is made once, in
-    /// `site_permissions::canonical_origin`.
-    static func reported(_ origin: WKSecurityOrigin) -> ReportedOrigin {
-        ReportedOrigin(
-            scheme: origin.protocol,
-            host: origin.host,
-            // `WKSecurityOrigin.port` is 0 for an address that did not spell
-            // one, which is exactly what the core reads as "the scheme's
-            // default". Anything negative is not a port; the core refuses an
-            // origin it cannot read, so passing 0 lands in the same place.
-            port: origin.port > 0 ? UInt32(origin.port) : 0
-        )
-    }
-
     /// The address the tab is on, for saying what an embedded frame was inside.
     private static func pageOrigin(
         of webView: WKWebView,
         fallingBackTo origin: WKSecurityOrigin
     ) -> ReportedOrigin {
         guard let url = webView.url, let host = url.host() else {
-            return reported(origin)
+            return reportedOrigin(origin)
         }
         return ReportedOrigin(
             scheme: url.scheme ?? "",
@@ -190,6 +170,29 @@ final class SitePermissionDelegate: NSObject, WKUIDelegate {
         @unknown default: .cameraAndMicrophone
         }
     }
+}
+
+/// A `WKSecurityOrigin` as three fields, uninterpreted.
+///
+/// Nothing is normalised here. Whether `https://x` and `https://x:443` are one
+/// site or two is a decision, and it is made once, in
+/// `site_permissions::canonical_origin`.
+///
+/// A free function for the reason `raisePageDialog` is one: two callers on two
+/// classes — the camera's request here, the four panels' `source(of:)` on
+/// `PageDialogDelegateBase` — and an origin read two ways is two answers to
+/// "is this the same site".
+@MainActor
+func reportedOrigin(_ origin: WKSecurityOrigin) -> ReportedOrigin {
+    ReportedOrigin(
+        scheme: origin.protocol,
+        host: origin.host,
+        // `WKSecurityOrigin.port` is 0 for an address that did not spell one,
+        // which is exactly what the core reads as "the scheme's default".
+        // Anything negative is not a port; the core refuses an origin it cannot
+        // read, so passing 0 lands in the same place.
+        port: origin.port > 0 ? UInt32(origin.port) : 0
+    )
 }
 
 extension HostedWebView {

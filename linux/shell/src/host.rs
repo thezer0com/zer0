@@ -15,6 +15,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gtk::glib;
 use gtk::glib::clone;
 use gtk::prelude::*;
+// Only the one trait, not the whole subclass prelude: `Mark::new` reaches its
+// own implementation through `imp()` and nothing else out here is a subclass.
+use gtk::subclass::prelude::ObjectSubclassIsExt;
 use gtk4 as gtk;
 use webkit6::prelude::WebViewExt;
 use webkit6::{LoadEvent, WebView};
@@ -60,7 +63,7 @@ struct Host {
 /// dispatcher still holds. So the queue and the pumping flag live beside the
 /// `RefCell`, not inside it — a handler can always reach them — and every
 /// action, from wherever it comes, is queued and drained by one pump.
-struct App {
+pub(crate) struct App {
     host: RefCell<Host>,
     queue: RefCell<VecDeque<Action>>,
     pumping: Cell<bool>,
@@ -68,7 +71,7 @@ struct App {
 
 /// The one door every action passes through, from a key press, a click, or a
 /// page's own navigation.
-pub fn run(app: &Rc<App>, action: Action) {
+fn run(app: &Rc<App>, action: Action) {
     app.queue.borrow_mut().push_back(action);
     pump(app);
 }
@@ -148,7 +151,7 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
                 }
             ));
             view.connect_notify_local(
-                "title",
+                Some("title"),
                 clone!(
                     #[weak]
                     app,
@@ -254,12 +257,18 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
         EngineCommand::AcceptDownload { id, .. }
         | EngineCommand::AskDownloadDestination { id, .. }
         | EngineCommand::CancelDownload { id }
-        | EngineCommand::StartDownload { id, .. }
         | EngineCommand::ResumeDownload { id, .. } => not_carried_out_yet(
             "a download command",
             // One why for the family: no WebKitGTK download signal is
             // connected yet, so nothing can start, answer or resume.
             &format!("download {id:?}: WebKitGTK's download signals are not wired up"),
+        ),
+        // Named apart from its four siblings because it is the one with no
+        // download to name: a download the core has not started has no id yet,
+        // and the address is the only thing there is to say.
+        EngineCommand::StartDownload { url, .. } => not_carried_out_yet(
+            "StartDownload",
+            &format!("no download of {url}: WebKitGTK's download signals are not wired up"),
         ),
         EngineCommand::FetchIcon { host: site, .. } => not_carried_out_yet(
             "FetchIcon",
@@ -361,7 +370,7 @@ fn report_stack(app: &Rc<App>, tab: TabId, view: &WebView) {
 /// carries it out. Every command is named; the ones with no GTK surface yet
 /// say so through [`not_carried_out_yet`], because a shortcut that does
 /// nothing silently is the worst way to learn a browser is unfinished.
-pub fn run_ui_command(app: &Rc<App>, command: UiCommand) {
+fn run_ui_command(app: &Rc<App>, command: UiCommand) {
     let action = {
         let host = app.host.borrow();
         let active = host.session.browser.active_tab();
@@ -598,7 +607,7 @@ fn sync_chrome(app: &Rc<App>) {
     // The tooltip reads the live keymap, so rebinding a chord cannot leave a
     // lie printed beside the button (DESIGN.md §10).
     let new_tab_tip = match new_tab_chord {
-        Some(chord) => format!("New tab ({})", chord_text(chord)),
+        Some(chord) => format!("New tab ({})", chord_text(&chord)),
         None => "New tab".to_string(),
     };
     new_tab.set_tooltip_text(Some(&new_tab_tip));
@@ -678,7 +687,7 @@ fn tab_name(tab: TabId) -> String {
 /// Build the window and hand back the shared state wired to it. The design
 /// tokens and the parsed mark arrive from `main` — this file renders what
 /// they say and decides nothing about either.
-pub fn app_for(
+pub(crate) fn app_for(
     application: &gtk::Application,
     design: &tokens::Tokens,
     dark: bool,
@@ -778,11 +787,12 @@ pub fn app_for(
             if fraction <= 0.0 || width <= 0 {
                 return;
             }
+            // `gdk::RGBA` keeps its channels as `f32`; cairo takes `f64`.
             cr.set_source_rgba(
-                bar_color.red(),
-                bar_color.green(),
-                bar_color.blue(),
-                bar_color.alpha(),
+                bar_color.red().into(),
+                bar_color.green().into(),
+                bar_color.blue().into(),
+                bar_color.alpha().into(),
             );
             cr.rectangle(0.0, 0.0, f64::from(width) * fraction, f64::from(height));
             let _ = cr.fill();
@@ -897,7 +907,7 @@ pub fn app_for(
         app,
         #[upgrade_or]
         gtk::glib::Propagation::Proceed,
-        move |_, keyval, _, state| { key_pressed(&app, keyval, state) }
+        move |_, keyval, _, state| key_pressed(&app, keyval, state)
     ));
     window.add_controller(keys);
 
@@ -1099,6 +1109,11 @@ mod mark {
 
     #[glib::object_subclass]
     impl ObjectSubclass for Mark {
+        // The name GObject registers the type under, and it is a process-wide
+        // namespace shared with GTK's own types — so it carries the shell's
+        // prefix rather than a bare `Mark`, which is the kind of collision
+        // that shows up as a widget nobody can explain.
+        const NAME: &'static str = "Zer0Mark";
         type Type = super::Mark;
         type ParentType = gtk::Widget;
 
@@ -1130,7 +1145,7 @@ mod mark {
             let (Some(path), Some(color)) = (self.path.get(), self.color.get()) else {
                 return;
             };
-            let instance = self.instance();
+            let instance = self.obj();
             let width = f64::from(instance.width());
             let height = f64::from(instance.height());
             if width <= 0.0 || height <= 0.0 {
@@ -1151,7 +1166,14 @@ mod mark {
 
 glib::wrapper! {
     /// The mark as a widget: token colour, `Glyph.mark` side, SVG geometry.
-    pub struct Mark(ObjectSubclass<mark::Mark>) @extends gtk::Widget;
+    ///
+    /// The three interfaces are not decoration: `WidgetImpl` is only
+    /// implementable for a type that carries all of them, because every
+    /// `GtkWidget` implements them in C, and a wrapper that names fewer than
+    /// the parent has is a type GTK cannot treat as a widget.
+    pub struct Mark(ObjectSubclass<mark::Mark>)
+        @extends gtk::Widget,
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Mark {
@@ -1168,7 +1190,9 @@ impl Mark {
 #[cfg(test)]
 mod tests {
     use super::{Key, UiCommand, key_for_keyval};
-    use gtk::gdk;
+    // A child module cannot see its parent's `use gtk4 as gtk`, so this names
+    // the crate rather than the parent's alias.
+    use gtk4::gdk;
 
     // These hold the keysym door the keymap's non-printable chords arrive
     // through. They construct constants only — no GTK initialisation, no

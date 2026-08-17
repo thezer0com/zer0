@@ -211,6 +211,10 @@ pub struct Tokens {
     pub stroke: Stroke,
     pub glyph: Glyph,
     pub durations: Durations,
+    /// Loaded and not read, for the reason `Spring` itself is: GTK has no
+    /// spring physics, so the approximation stays named next to the data it
+    /// approximates rather than quietly absent.
+    #[allow(dead_code)]
     pub spring: Spring,
     pub elevation: Elevation,
     pub types: Types,
