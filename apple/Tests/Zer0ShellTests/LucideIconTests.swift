@@ -218,63 +218,127 @@ struct LucideIconTests {
     /// crossings of a rightward ray: the same claim `eoFill:` was making,
     /// holding on every macOS the 15.4 floor admits.
     private func inside(_ point: CGPoint, of path: Path) -> Bool {
-        var crossings = 0
-        var ring: [CGPoint] = []
-        var pen = CGPoint.zero
+        var probe = EvenOddProbe(point: point)
+        path.forEach { probe.add($0) }
+        probe.closeRing()
+        return probe.isInside
+    }
 
-        func closeRing() {
-            guard ring.count > 2 else {
-                ring = []
-                return
-            }
-            for i in ring.indices {
-                let a = ring[i]
-                let b = ring[(i + 1) % ring.count]
-                if (a.y > point.y) != (b.y > point.y) {
-                    let x = a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
-                    if x > point.x { crossings += 1 }
-                }
-            }
-            ring = []
+    /// One small method per step, every signature explicit, because the
+    /// first cut of this walked the path in a single closure — four cases
+    /// of switch with the bezier arithmetic inline — and the CI's Swift
+    /// 6.2 could not type-check that expression in reasonable time while
+    /// the local 26.6 never complained. Behaviour is proven by the suite;
+    /// this shape is what keeps slower solvers in the game.
+    private struct EvenOddProbe {
+        private let point: CGPoint
+        private var crossings = 0
+        private var ring: [CGPoint] = []
+        private var pen = CGPoint.zero
+
+        private static let samples = 16
+
+        init(point: CGPoint) {
+            self.point = point
         }
 
-        path.forEach { element in
+        var isInside: Bool {
+            crossings % 2 == 1
+        }
+
+        mutating func add(_ element: Path.Element) {
             switch element {
             case .move(to: let p):
-                closeRing()
-                ring = [p]
-                pen = p
+                startSubpath(at: p)
             case .line(to: let p):
                 ring.append(p)
                 pen = p
             case .quadCurve(to: let end, control: let c):
-                for i in 1...16 {
-                    let t = CGFloat(i) / 16
-                    let u = 1 - t
-                    ring.append(CGPoint(
-                        x: u * u * pen.x + 2 * u * t * c.x + t * t * end.x,
-                        y: u * u * pen.y + 2 * u * t * c.y + t * t * end.y
-                    ))
-                }
+                flattenQuad(from: pen, through: c, to: end)
                 pen = end
             case .curve(to: let end, control1: let c1, control2: let c2):
-                for i in 1...16 {
-                    let t = CGFloat(i) / 16
-                    let u = 1 - t
-                    ring.append(CGPoint(
-                        x: u * u * u * pen.x + 3 * u * u * t * c1.x
-                            + 3 * u * t * t * c2.x + t * t * t * end.x,
-                        y: u * u * u * pen.y + 3 * u * u * t * c1.y
-                            + 3 * u * t * t * c2.y + t * t * t * end.y
-                    ))
-                }
+                flattenCubic(from: pen, via: c1, and: c2, to: end)
                 pen = end
             case .closeSubpath:
                 closeRing()
             }
         }
-        closeRing()
-        return crossings % 2 == 1
+
+        mutating func closeRing() {
+            if ring.count > 2 {
+                countCrossings()
+            }
+            ring = []
+        }
+
+        private mutating func startSubpath(at p: CGPoint) {
+            closeRing()
+            ring = [p]
+            pen = p
+        }
+
+        private mutating func countCrossings() {
+            var index = 0
+            while index < ring.count {
+                let next = (index + 1) % ring.count
+                countEdge(from: ring[index], to: ring[next])
+                index += 1
+            }
+        }
+
+        private mutating func countEdge(from a: CGPoint, to b: CGPoint) {
+            let aAbove = a.y > point.y
+            let bAbove = b.y > point.y
+            if aAbove != bAbove {
+                let slope = (b.x - a.x) / (b.y - a.y)
+                let crossingX = a.x + (point.y - a.y) * slope
+                if crossingX > point.x {
+                    crossings += 1
+                }
+            }
+        }
+
+        private mutating func flattenQuad(
+            from p0: CGPoint, through c: CGPoint, to p1: CGPoint
+        ) {
+            var step = 1
+            while step <= Self.samples {
+                let t = CGFloat(step) / CGFloat(Self.samples)
+                ring.append(quadPoint(p0, c, p1, t: t))
+                step += 1
+            }
+        }
+
+        private mutating func flattenCubic(
+            from p0: CGPoint, via c1: CGPoint, and c2: CGPoint, to p1: CGPoint
+        ) {
+            var step = 1
+            while step <= Self.samples {
+                let t = CGFloat(step) / CGFloat(Self.samples)
+                ring.append(cubicPoint(p0, c1, c2, p1, t: t))
+                step += 1
+            }
+        }
+
+        private func quadPoint(
+            _ p0: CGPoint, _ c: CGPoint, _ p1: CGPoint, t: CGFloat
+        ) -> CGPoint {
+            let u = 1 - t
+            let x = u * u * p0.x + 2 * u * t * c.x + t * t * p1.x
+            let y = u * u * p0.y + 2 * u * t * c.y + t * t * p1.y
+            return CGPoint(x: x, y: y)
+        }
+
+        private func cubicPoint(
+            _ p0: CGPoint, _ c1: CGPoint, _ c2: CGPoint, _ p1: CGPoint, t: CGFloat
+        ) -> CGPoint {
+            let u = 1 - t
+            let uu = u * u
+            let tt = t * t
+            let x = u * uu * p0.x + 3 * uu * t * c1.x + 3 * u * tt * c2.x + tt * t * p1.x
+            let y = u * uu * p0.y + 3 * uu * t * c1.y + 3 * u * tt * c2.y + tt * t * p1.y
+            return CGPoint(x: x, y: y)
+        }
     }
 
     private func matches(_ a: CGRect, _ b: CGRect) -> Bool {
