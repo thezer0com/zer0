@@ -177,4 +177,31 @@ struct AboutVersionTests {
         #expect(AboutView.versionLine(from: ["CFBundleShortVersionString": ""])
             == "Development build")
     }
+
+    // The engine lines below run the same function the About window runs
+    // (ADR-0124). Provenance is the decision under test: "embedded" and
+    // "system" name different engines rendering the same pages, so a line
+    // that swaps them is a bug report filed against the wrong engine.
+
+    @Test("an embedded engine is named as the bundle's own")
+    func embeddedEngineIsNamedAsTheBundlesOwn() {
+        #expect(AboutView.engineLine(embedded: true, version: "7624.4.5.14.1")
+            == "Engine: embedded WebKit 7624.4.5.14.1")
+    }
+
+    @Test("with nothing embedded the system engine is named as the system's")
+    func systemEngineIsNamedAsTheSystems() {
+        #expect(AboutView.engineLine(embedded: false, version: "21624.4.5.11.5")
+            == "Engine: system WebKit 21624.4.5.11.5")
+    }
+
+    @Test("an engine version nobody can read is omitted, not invented")
+    func unreadableEngineVersionIsOmittedNotInvented() {
+        #expect(AboutView.engineLine(embedded: true, version: nil)
+            == "Engine: embedded WebKit")
+        #expect(AboutView.engineLine(embedded: false, version: nil)
+            == "Engine: system WebKit")
+        #expect(AboutView.engineLine(embedded: true, version: "")
+            == "Engine: embedded WebKit")
+    }
 }

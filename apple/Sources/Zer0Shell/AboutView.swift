@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// What the program is, which build this is, and what it is licensed under.
 ///
@@ -21,7 +22,10 @@ public struct AboutView: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: Design.Space.loose) {
+        // Resolved once: the two lookups must describe the same instant, and
+        // a property read twice is a property that disagrees with itself.
+        let engine = Self.runningEngine
+        return VStack(spacing: Design.Space.loose) {
             // The mark's other home, and the one place it is allowed to be the
             // loudest thing on screen.
             Zer0MarkGlyph(side: Design.Glyph.mark)
@@ -42,6 +46,15 @@ public struct AboutView: View {
                     // prose: monospaced so `1` and `l` cannot be confused, and
                     // selectable because it exists to be pasted into a bug
                     // report.
+                    .font(Design.Text.mono)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                // The engine line answers the other half of "which build is
+                // this": a bug report that names the app but not the engine
+                // it ran reproducibly on is a coin flip. Same treatment as
+                // the version line above for the same reason.
+                Text(Self.engineLine(embedded: engine.embedded, version: engine.version))
                     .font(Design.Text.mono)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
@@ -105,5 +118,28 @@ public struct AboutView: View {
             return "Version \(short)"
         }
         return "Version \(short) (\(build))"
+    }
+
+    /// Which WebKit is running and where it came from. Provenance is a
+    /// label, not a guess: the embedded engine and the system one render the
+    /// same pages differently enough that a bug report has to name them
+    /// apart (ADR-0124). A version nobody can read is omitted rather than
+    /// invented — the provenance alone is still true.
+    static func engineLine(embedded: Bool, version: String?) -> String {
+        let provenance = embedded ? "embedded WebKit" : "system WebKit"
+        guard let version, !version.isEmpty else { return "Engine: \(provenance)" }
+        return "Engine: \(provenance) \(version)"
+    }
+
+    /// The engine the process actually loaded. Provenance comes from where
+    /// the loaded WebKit bundle lives, not from what the app ships: an embed
+    /// dyld silently dropped for the system copy must say "system", or this
+    /// line becomes a second place a broken embed hides. The version is the
+    /// framework's own `CFBundleVersion` — the same number
+    /// `run-with-webkit.sh` prints, read the same way.
+    private static var runningEngine: (embedded: Bool, version: String?) {
+        let engine = Bundle(for: WKWebView.self)
+        let insideApp = engine.bundleURL.path.hasPrefix(Bundle.main.bundleURL.path + "/")
+        return (insideApp, engine.infoDictionary?["CFBundleVersion"] as? String)
     }
 }

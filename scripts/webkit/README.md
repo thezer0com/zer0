@@ -15,9 +15,13 @@ Nothing here writes inside the repo. Source and build products go to
 ## Flow
 
 ```sh
-./scripts/webkit/fetch.sh              # shallow checkout of the pinned tag
+./scripts/webkit/fetch.sh              # shallow checkout of the channel's pin
 ./scripts/webkit/build.sh --release    # build it; prints where it landed
 ```
+
+The channel is `ZER0_CHANNEL` (`stable` by default, `canary` in the canary
+CI job). Stable pins a `WebKit-*` tag, canary pins an exact sha of `main`
+(ADR-0124); `fetch.sh` takes either.
 
 The build takes a long time. Run it detached and read the log:
 
@@ -48,16 +52,22 @@ source build produces and is expected.
 
 | File | What it is |
 | --- | --- |
-| `version.txt` | The pinned tag, and how to pick a new one. The only place a version is written down. |
-| `fetch.sh` | Clones or updates the checkout at that tag. Idempotent. |
+| `version.txt` | The pins — a stable tag, a canary sha — and how to pick new ones. The only place a version is written down. |
+| `fetch.sh` | Clones or updates the checkout at the channel's pin. Idempotent. |
 | `build.sh` | Preflights the toolchain, then runs `Tools/Scripts/build-webkit`. Resumable. |
-| `common.sh` | Shared path and version resolution. Not run directly. |
+| `common.sh` | Shared path and pin resolution. Not run directly. |
+| `check-versions.sh` | Holds `version.txt` to the two-channel contract; runs from `scripts/check.sh`. |
 
-## Which revision, and why not `main`
+## Which revision, and why `main` only on canary
 
-`version.txt` pins a `WebKit-*` tag. Those tags are the source drops Apple
-shipped a Safari from, so each one built and survived a release cycle. `main`
-is whatever landed in the last hour and regularly does not build at all.
+Stable pins a `WebKit-*` tag. Those tags are the source drops Apple shipped a
+Safari from, so each one built and survived a release cycle. Canary pins an
+exact sha of `main` (ADR-0124): its population volunteered to meet engine
+regressions early, and a source-drop tag is by definition a release cycle
+behind them. `main` regularly does not build at all — when it does not at
+the pinned sha, `build-webkit` goes red and the canary channel fails closed
+rather than releasing the wrong engine. The weekly `.github/workflows/webkit-bump.yml`
+resolves both pins and opens the PR whose merge builds the two caches.
 
 Tags carry no `v` and no semver; they look like `WebKit-7624.4.5.14.1`. List
 them newest-last:

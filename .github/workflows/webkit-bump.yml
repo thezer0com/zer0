@@ -1,0 +1,116 @@
+name: webkit-bump
+
+# The automation ADR-0109 left to a person ("a recurring check of the WebKit
+# advisory feed against the pin, owned by a person, until that check is
+# automated"). Weekly, resolves what the two channels should pin next
+# (ADR-0124) -- the newest `WebKit-*` source-drop tag for stable, `main`'s
+# sha for canary -- and opens a pull request, dependabot-style.
+#
+# The merge is the loud part: pushing version.txt to `main` is what makes
+# build-webkit.yml build both caches, and canary.yml / stable.yml refuse to
+# release against a missing cache (fail-on-cache-miss). A canary sha that
+# does not build therefore goes red in build-webkit the moment the PR lands,
+# and the canary channel fails closed until the next bump or a revert --
+# acceptable, because canary is the population that volunteered for main.
+#
+# Uses no secrets beyond GITHUB_TOKEN. That has a consequence worth writing
+# down: the PR this opens cannot itself trigger `pull_request` workflows
+# (events made with GITHUB_TOKEN never do), so the 35-minute builds run at
+# merge, not on the PR. A hand-edited pin gets the PR-time build instead,
+# because a human's push does trigger workflows.
+on:
+  schedule:
+    # Weekly, off the hour like advisories.yml: everything cron'd at :00 on
+    # GitHub queues together.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  # Never two bump PRs racing: the second would reopen the first's PR with
+  # a day-old revision. Serialised, the second simply finds nothing to do.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: resolve newest revisions
+        id: resolve
+        # Same recipes version.txt documents for by-hand bumps: newest
+        # `WebKit-*` tag via sort -V, `main` via ls-remote. No clone -- the
+        # pin is a name and a sha, nothing here needs the tree.
+        run: |
+          tag="$(git ls-remote --tags --refs https://github.com/WebKit/WebKit.git \
+            'refs/tags/WebKit-*' | sed 's|.*refs/tags/||' | sort -V | tail -1)"
+          sha="$(git ls-remote https://github.com/WebKit/WebKit.git refs/heads/main | cut -f1)"
+          if [[ -z "$tag" || -z "$sha" ]]; then
+            echo "::error::could not resolve the WebKit revisions (tag: '${tag:-none}', sha: '${sha:-none}')." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: nothing to bump
+        id: maybe
+        # A green no-op with a message, not a skipped job: a person reading
+        # the run must be able to tell "up to date" from "did not run".
+        run: |
+          old_tag="$(sed -n 's/^WEBKIT_TAG_STABLE=//p' scripts/webkit/version.txt | tail -1)"
+          old_sha="$(sed -n 's/^WEBKIT_CANARY_SHA=//p' scripts/webkit/version.txt | tail -1)"
+          new_tag="${{ steps.resolve.outputs.tag }}"
+          new_sha="${{ steps.resolve.outputs.sha }}"
+          if [[ "$old_tag" == "$new_tag" && "$old_sha" == "$new_sha" ]]; then
+            echo "stable $old_tag and canary ${old_sha:0:10} are already the newest pins."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable: $old_tag -> $new_tag"
+            echo "canary: ${old_sha:0:10} -> ${new_sha:0:10}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: write version.txt
+        if: steps.maybe.outputs.changed == 'true'
+        run: |
+          sed -i "s|^WEBKIT_TAG_STABLE=.*|WEBKIT_TAG_STABLE=${{ steps.resolve.outputs.tag }}|" \
+            scripts/webkit/version.txt
+          sed -i "s|^WEBKIT_CANARY_SHA=.*|WEBKIT_CANARY_SHA=${{ steps.resolve.outputs.sha }}|" \
+            scripts/webkit/version.txt
+
+      - name: open pull request
+        if: steps.maybe.outputs.changed == 'true'
+        uses: actions/create-pull-request@v7
+        with:
+          branch: webkit-bump
+          delete-branch: true
+          title: "webkit: stable ${{ steps.resolve.outputs.tag }}, canary ${{ steps.resolve.outputs.sha }}"
+          # The body is the review: what merging costs (two 35-min builds),
+          # what each pin is for, and where failure shows up. A bump PR read
+          # in six months should not need the ADR open beside it.
+          body: |
+            Automatic weekly engine bump (ADR-0124).
+
+            - **stable**: `WEBKIT_TAG_STABLE` -> `${{ steps.resolve.outputs.tag }}`
+              — newest `WebKit-*` source-drop tag.
+            - **canary**: `WEBKIT_CANARY_SHA` -> `${{ steps.resolve.outputs.sha }}`
+              — `main` at bump time, via `WEBKIT_CANARY_REF=main`.
+
+            Merging runs `build-webkit` for both channels (~35 min each,
+            cached per pin). If the canary leg fails, `main` does not build at
+            this sha: revert, or re-run `webkit-bump` for a newer sha. The
+            canary channel fails closed on the missing cache rather than
+            releasing the wrong engine.
+          commit-message: |
+            webkit: stable ${{ steps.resolve.outputs.tag }}, canary ${{ steps.resolve.outputs.sha }}
+
+            version.txt remains the only place a revision is written down;
+            merging is what builds both engine caches (build-webkit.yml).

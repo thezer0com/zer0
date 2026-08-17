@@ -1,16 +1,25 @@
 name: build-webkit
 
-# The long pole of the release pipeline. A clean WebKit build at the pinned
-# tag is ~35 min (measured in scripts/webkit/README.md); a release build of
-# the rest of the browser against a cached engine is ~10 min (ADR-0109).
-# This job exists to keep the 35 min off the canary/stable jobs.
+# The long pole of the release pipeline. A clean WebKit build at a pinned
+# revision is ~35 min (measured in scripts/webkit/README.md); a release
+# build of the rest of the browser against a cached engine is ~10 min
+# (ADR-0109). This job exists to keep the 35 min off the canary/stable jobs.
+#
+# Two channels, two caches (ADR-0124): stable builds the `WebKit-*` tag,
+# canary builds the exact sha of `main` pinned beside it in version.txt.
+# Each leg restores nothing from the other -- the cache keys carry the
+# channel name -- so the channels cannot drift into building each other's
+# engine by accident of a shared key.
 #
 # The trigger is narrow on purpose. `paths: scripts/webkit/version.txt`
-# fires only when the pin moves -- the tag has sat at WebKit-7624.4.5.14.1
-# since 2026-08-08 and there is no reason to spend 35 min rebuilding the
-# same revision. `workflow_dispatch` covers the human-driven case (a
-# rebuild after a runner image change, a corrupted artefact, a patched
-# build flag).
+# fires only when a pin moves -- the stable tag has sat at
+# WebKit-7624.4.5.14.1 since 2026-08-08 and there is no reason to spend
+# 35 min rebuilding the same revision. `workflow_dispatch` covers the
+# human-driven case (a rebuild after a runner image change, a corrupted
+# artefact, a patched build flag). `pull_request` exists for the hand-edited
+# bump: a pin someone typed must show its 35-minute build on the PR, not
+# after the merge. (The weekly bump bot's PR cannot fire it -- events made
+# with GITHUB_TOKEN do not trigger workflows -- so its build runs at merge.)
 #
 # ADR-0109 names Blacksmith.sh as the macOS runner. Blacksmith exposes
 # its own labels (https://docs.blacksmith.sh/introduction/quickstart);
@@ -23,21 +32,35 @@ on:
     paths:
       - 'scripts/webkit/version.txt'
     branches: [main]
+  pull_request:
+    paths:
+      - 'scripts/webkit/version.txt'
   workflow_dispatch:
-
-concurrency:
-  # Two pushes to version.txt in quick succession build the same tag twice
-  # if the first has not finished. Serialise them: the second would either
-  # reproduce the first's artefact or replace a failed one, and neither
-  # justifies 35 min of concurrent runner time.
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   build:
+    # Job-level because `matrix` only exists there. One group per channel:
+    # the stable and canary legs of one PR run in parallel — a canary sha
+    # moving must not queue behind a stable rebuild it has nothing to do
+    # with — and everything that builds the same channel (two pushes in
+    # quick succession, a PR's preview build and its post-merge push)
+    # serialises instead of racing over the same pin. Nothing is cancelled:
+    # a superseded run still builds and saves under its own key, which
+    # wastes 35 minutes in the rare hand-edited-bump case and corrupts
+    # nothing, because a cache entry is immutable under its key.
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.channel }}
+      cancel-in-progress: false
+    strategy:
+      # Not fail-fast: a canary sha that does not build must not cancel the
+      # stable leg. The two pins move on different clocks and stable's
+      # artefact is the one users wait on.
+      fail-fast: false
+      matrix:
+        channel: [stable, canary]
     runs-on: blacksmith-6vcpu-macos-15
     # WebKit's build-webkit has no internal cap; the GitHub Actions timeout
     # is the only wall. 90 min is generous against the measured 35m34s clean
@@ -45,9 +68,11 @@ jobs:
     # build fails inside a working day rather than overnight.
     timeout-minutes: 90
     env:
+      # The channel whose pin fetch.sh reads from version.txt (ADR-0124).
+      ZER0_CHANNEL: ${{ matrix.channel }}
       # Pinned for the same reason `ci.yml` pins it: a runner image update
       # must not move the SDK under a build whose output is cached against
-      # a tag. Xcode 26+ is required because WebKit now compiles .metal
+      # a pin. Xcode 26+ is required because WebKit now compiles .metal
       # shaders via the separately-downloaded Metal toolchain.
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -69,26 +94,35 @@ jobs:
           # that says nothing about a missing download if this is absent.
           xcodebuild -downloadComponent MetalToolchain || true
 
-      - name: read pinned tag
-        id: tag
+      - name: read pinned revision
+        id: pin
         # Reads version.txt the same way scripts/webkit/common.sh does --
         # as data, not as a sourced script. A stray backtick in a comment
         # must not run.
         run: |
-          tag="$(sed -n 's/^WEBKIT_TAG=//p' scripts/webkit/version.txt | tail -1)"
-          [[ -n "$tag" ]] || { echo "no WEBKIT_TAG in version.txt" >&2; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "${{ matrix.channel }}" in
+            stable) key=WEBKIT_TAG_STABLE ;;
+            canary) key=WEBKIT_CANARY_SHA ;;
+          esac
+          pin="$(sed -n "s/^${key}=//p" scripts/webkit/version.txt | tail -1)"
+          [[ -n "$pin" ]] || { echo "no $key in version.txt" >&2; exit 1; }
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
 
       # `lookup-only: true` skips the restore download; we only need to
       # know whether the key exists. The artefact is large; pulling it
       # back onto the runner that just produced it would waste bandwidth
       # and time.
+      #
+      # The key change from `webkit-<tag>` to `webkit-<channel>-<pin>` (one
+      # namespace per channel) orphans the pre-0124 entries: the first run
+      # after this lands rebuilds stable once. One-time, and cheaper than
+      # two channels sharing a key they can silently collide in.
       - name: check cache
         id: cache
         uses: actions/cache@v4
         with:
           path: webkit-build.tar.zst
-          key: webkit-${{ steps.tag.outputs.tag }}
+          key: webkit-${{ matrix.channel }}-${{ steps.pin.outputs.pin }}
           lookup-only: true
 
       - name: fetch + build
@@ -96,6 +130,8 @@ jobs:
         run: |
           # WEBKIT_DIR is ~/.cache/zer0/webkit by default (version.txt).
           # Leaving it at the default keeps the cache paths below honest.
+          # fetch.sh reads ZER0_CHANNEL (set at the job level) and resolves
+          # this channel's pin -- a tag for stable, a sha for canary.
           ./scripts/webkit/fetch.sh
           ./scripts/webkit/build.sh --release
 
@@ -119,7 +155,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: webkit-build.tar.zst
-          key: webkit-${{ steps.tag.outputs.tag }}
+          key: webkit-${{ matrix.channel }}-${{ steps.pin.outputs.pin }}
 
       # A 90-day retention window on the artefact upload is a backstop:
       # if the cache layer evicts the entry (cache is best-effort, the
@@ -127,6 +163,6 @@ jobs:
       - name: upload artefact
         uses: actions/upload-artifact@v4
         with:
-          name: webkit-build-${{ steps.tag.outputs.tag }}
+          name: webkit-build-${{ matrix.channel }}-${{ steps.pin.outputs.pin }}
           path: webkit-build.tar.zst
           retention-days: 90

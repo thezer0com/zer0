@@ -1,6 +1,6 @@
 # ADR-0109: Two bundles — stable and canary — each with its own bundle id, profile and update channel
 
-- **Status:** Accepted
+- **Status:** Accepted, and the same-pin clause partly superseded by ADR-0124
 - **Date:** 2026-08-12
 - **Lock:** `apple/scripts/resolve-bundle.sh::build_bundle_id_parametrized`, `apple/Tests/Zer0ShellTests/BundleIdTests.swift::BundleIdTests/theStableBundleHasTheStableIdAndTheCanaryHasTheCanaryId`, `apple/Tests/Zer0ShellTests/BundleIdTests.swift::BundleIdTests/defaultStoragePathFollowsTheBundleIdRule`
 - **Previous debt note:** this ADR landed as `none — debt` and named the two
@@ -86,6 +86,11 @@ are the only revisions that have been through a release cycle holds as
 strongly for canary as it does for stable, and the cost of running a third
 engine track is the cost of running a third browser. When `main` becomes
 attractive enough to ship, that is its own ADR (see *When to revisit*).
+
+> **The "same pinned tag" clause is superseded by ADR-0124**, and only that
+> clause: stable keeps a `WebKit-*` source-drop tag, canary now pins an
+> exact sha of `main`, both still embedded. Everything else this ADR
+> decided — two bundles, two profiles, two appcasts — stands.
 
 **Update triggers are GitHub Actions workflows on a macOS runner
 (Blacksmith.sh).** Canary fires on every push to `main`; stable fires on
@@ -247,7 +252,9 @@ profile and the next canary update renders it unreadable.
   STP-style third channel re-enters the conversation: a `main`-tracking
   build, behind a third bundle id, with no pretence of stability. It is
   not this ADR; it is the one this ADR points at when the cost of *not*
-  shipping `main` becomes measurable.
+  shipping `main` becomes measurable. (ADR-0124 is that ADR, arrived at by
+  the canary door rather than a third channel: canary tracks `main` on a
+  sha, stable keeps the tag.)
 - **On the first WebKit CVE published after the first embedded
   release.** ADR-0005 §"When to revisit" #3 names this moment as the
   test of whether the rebuild-and-ship path exists at all; this ADR
