@@ -157,8 +157,9 @@ document.
   an empty browser, assume "something went bad", and keep using it. The file was
   already destroyed on the first autosave.
 
-  That is the failure mode this ADR exists to prevent, and it passes the entire
-  test suite as it stands today.
+  That is the failure mode this ADR exists to prevent, and
+  `a_session_that_opens_but_cannot_be_read_is_never_written_over` catches it at
+  the first assertion — `load_error().is_some()` — before any write.
 
 - **"Nothing is being saved anymore and nobody told me."** The inverse path:
   `loadError` still switches saves off, but the `sessionWarning` disappears from
@@ -181,27 +182,46 @@ persists: `a_saved_session_comes_back_the_same`, `tab_order_and_the_tree_survive
 `clearing_history_actually_clears_it`,
 `a_corrupt_id_does_not_overflow_the_id_counter`.
 
-**The second half has no lock at all.** There is no test about `load_error`
-anywhere in the repository. Closing it would take three tests in
-`store_tests.rs`/`ffi`:
+**The second half is locked.** The three tests this section once called for
+exist, each asserting its guarantee where the list says:
 
-1. **`Zer0::open` over a corrupted file does not write to it.** Write structural
-   garbage into a `.sqlite`, open it, fire actions, call `save()`, and check that the
-   file's bytes **did not change**. That is the test that prevents total loss.
+1. **`Zer0::open` over a corrupted file does not write to it.**
+   `crates/zer0-core/src/ffi_tests.rs::a_session_that_opens_but_cannot_be_read_is_never_written_over`
+   corrupts the contents of a database that opens fine, fires actions, calls
+   `save()`, and checks that the file's bytes **did not change** — and that what
+   was in there is still in there, unreadable and all. That is the test that
+   prevents total loss.
 2. **`load_error` is `Some` when the read failed and `None` when it worked.** The
-   value exists today and nothing checks it.
-3. **`is_persistent()` is `false` after a failed read.** The "detached store"
-   invariant, declared in prose and never measured.
+   `Some` half is asserted by that same test; the `None` half by the healthy
+   control, `ffi_tests.rs::a_session_that_reads_fine_is_saved_as_usual`, which
+   also proves `save()` still writes on a healthy session.
+3. **`is_persistent()` is `false` after a failed read.** Asserted by the same
+   test. The "detached store" invariant, measured.
 
-And on the Swift side, a test that `loadError != nil` makes the warning exist —
-unreachable today without instrumenting the SwiftUI hierarchy, but reachable if the
-condition becomes a computed property on `BrowserModel`.
+The could-not-open row of the table above has its own lock:
+`ffi_tests.rs::a_session_file_that_cannot_be_opened_is_reported_and_never_written_to`.
+
+And on the Swift side, the warning is locked by
+`apple/Tests/Zer0ShellTests/SettingsTests.swift::SessionPersistenceTests/unreadableSessionWarnsInTheUI`,
+asserting `loadError` and `showsSessionWarning` — the computed property on
+`BrowserModel` that this ADR said would make the warning reachable is what
+exists. `healthySessionIsQuiet` is the Swift control.
+
+Each failure-path lock has been seen failing under its named regression, broken
+on purpose. Keeping the `Store` alive in the `Err(load)` arm of `Zer0::open`
+fails the read-failure test at its first assertion — `load_error().is_some()` —
+before any write, while the unopenable test and the healthy control stay green.
+Swallowing `load_error` in the could-not-open arm fails the unopenable test on
+the reporting assertion only, its bytes assertion not reached — the test stops
+at the reporting failure, and under that break the store stays detached so
+`save()` still no-ops — the silence regression, not the total-loss one — and
+fails `unreadableSessionWarnsInTheUI` on both `loadError` and the banner, while
+`sessionSurvivesRelaunch` passes on the same broken binary. The controls staying
+green is what proves the mutations surgical. Restored, every one of them green
+again.
 
 ## When to revisit
 
-- **Before anything else: write the three `load_error` tests.** It is the largest
-  risk debt across the UX ADRs, because the regression is silent and the damage is
-  irreversible.
 - If a full save shows up in a profile with a large history. The way out is
   incremental writing, not saving less often.
 - If `loadError` happens with any real frequency. Then the design needs real
