@@ -239,12 +239,26 @@ struct DownloadResumeTests {
         let folder = try scratch("dropped")
         let size = 2 * 1024 * 1024
         let server = try await TinyHTTPServer(routes: [
-            "/file": .resumableFile(named: "big.bin", bytes: size, sendOnly: 256 * 1024),
+            // Trickled, so the connection is still open to be dropped.
+            "/file": .resumableFile(named: "big.bin", bytes: size, gap: 0.1),
         ])
         defer { server.stop() }
 
         let m = model(savingInto: folder)
         try navigate(m, to: "http://127.0.0.1:\(server.port)/file")
+
+        // The hang-up waits for a byte to have landed, rather than being a byte
+        // count baked into the route. A route that stops short delivers its
+        // short body and closes at loopback speed, and that can be over before
+        // `decideDestinationUsing` has answered. That handler waits on the main
+        // actor behind every other test in the run, so WebKit fails the
+        // transfer having written nothing. Measured on CI: `stoppedAt: 0`,
+        // resume data for byte zero, and a resume that asked for the same
+        // truncated response again and so could never complete. What this test
+        // is about is a connection dropping *partway*, and only the client can
+        // say when partway has been reached.
+        #expect(await eventually { (m.downloads.first?.receivedBytes ?? 0) > 0 })
+        server.dropInFlight()
 
         #expect(await eventually { m.downloads.first?.state == .failed })
         #expect(await eventually { m.downloads.first?.resumable == true })
@@ -439,15 +453,15 @@ struct TinyResponse: Sendable {
     /// Everything a server has to say before WebKit will hand back resume data:
     /// a length, a validator, and a promise that it will honour a byte range.
     ///
-    /// `sendOnly` is the flaky connection: the head still declares the whole
-    /// length, the body stops short, and the connection closes — which is what
-    /// arrives as `NSURLErrorNetworkConnectionLost`. Measured on a real
-    /// `WKWebView`: this shape hands back 6,421 bytes of resume data, and the
-    /// same shape with the two validators removed hands back `nil`.
+    /// The flaky connection is `TinyHTTPServer.dropInFlight()` rather than
+    /// anything declared here: the head promises the whole length, the body
+    /// stops wherever the hang-up caught it, and that is what arrives as
+    /// `NSURLErrorNetworkConnectionLost`. Measured on a real `WKWebView`: this
+    /// shape hands back 6,421 bytes of resume data, and the same shape with the
+    /// two validators removed hands back `nil`.
     static func resumableFile(
         named filename: String,
         bytes: Int,
-        sendOnly: Int? = nil,
         gap: Double = 0
     ) -> TinyResponse {
         let whole = Data(repeating: 0x7A, count: bytes)
@@ -461,7 +475,7 @@ struct TinyResponse: Sendable {
                 "Last-Modified: Wed, 21 Oct 2026 07:28:00 GMT",
                 "Connection: close",
             ]),
-            chunks: pieces(of: whole.prefix(sendOnly ?? bytes)),
+            chunks: pieces(of: whole),
             gap: gap,
             whole: whole
         )
@@ -527,15 +541,46 @@ struct TinyResponse: Sendable {
 /// is no `Content-Disposition` on a file, so the hostile-filename case — the
 /// one worth testing end to end — cannot happen over one.
 final class TinyHTTPServer: @unchecked Sendable {
+    /// The connections a hang-up would drop.
+    ///
+    /// Its own object rather than a property, so the listener's handler and the
+    /// server can both hold it without the handler capturing `self`. The lock is
+    /// because the handler runs on a background queue while the hang-up comes
+    /// from the test's actor.
+    private final class LiveConnections: @unchecked Sendable {
+        private let lock = NSLock()
+        private var connections: [NWConnection] = []
+
+        func add(_ connection: NWConnection) {
+            lock.lock()
+            connections.append(connection)
+            lock.unlock()
+        }
+
+        /// Takes them, so nothing is hung up on twice.
+        func take() -> [NWConnection] {
+            lock.lock()
+            defer { lock.unlock() }
+            let all = connections
+            connections = []
+            return all
+        }
+    }
+
     private let listener: NWListener
+    private let live: LiveConnections
     let port: UInt16
 
     init(routes: [String: TinyResponse]) async throws {
+        let live = LiveConnections()
+        self.live = live
+
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
         listener = try NWListener(using: parameters, on: .any)
 
         listener.newConnectionHandler = { connection in
+            live.add(connection)
             connection.start(queue: .global())
             connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
                 let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
@@ -583,7 +628,13 @@ final class TinyHTTPServer: @unchecked Sendable {
             connection.cancel()
             return
         }
-        connection.send(content: piece, completion: .contentProcessed { _ in
+        connection.send(content: piece, completion: .contentProcessed { error in
+            // The connection was hung up on, or died. Carrying on would queue a
+            // timer per remaining piece to write into a socket that is gone.
+            guard error == nil else {
+                connection.cancel()
+                return
+            }
             let rest = remaining.dropFirst()
             guard response.gap > 0, !rest.isEmpty else {
                 send(rest, of: response, over: connection)
@@ -595,7 +646,19 @@ final class TinyHTTPServer: @unchecked Sendable {
         })
     }
 
+    /// Hang up on everything connected right now, mid-body.
+    ///
+    /// The head has already promised a length, so a client holding part of the
+    /// body sees the transfer die under it. `cancel` rather than `forceCancel`:
+    /// what was already written still arrives and only the rest goes missing,
+    /// which is the shape of a connection that drops rather than of one that
+    /// never delivered anything.
+    func dropInFlight() {
+        for connection in live.take() { connection.cancel() }
+    }
+
     func stop() {
+        dropInFlight()
         listener.cancel()
     }
 }
