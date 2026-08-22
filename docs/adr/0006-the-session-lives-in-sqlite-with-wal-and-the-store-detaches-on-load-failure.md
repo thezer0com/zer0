@@ -111,21 +111,35 @@ gone. It happens if the `Err(error) => (None, None, Some(...))` branch in
 `ffi.rs` becomes something that keeps the `Store` alive, or if an
 `unwrap_or_default()` gets dropped in where the `match` was.
 
-**No test screams in that case.** There is no test for `load_error` or for
-`is_persistent` anywhere in the repository: `ffi.rs` has no test module, and no
-Swift test touches `model.loadError`. That is the most dangerous debt in this
-ADR, because the decision is invisible on the happy path.
+**A test screams in that case.** The three tests this list once called for
+exist:
 
-**What would need to be tested**, and is not:
+1. A file whose bytes are not a valid database, opened with `Zer0::open`,
+   asserting `load_error().is_some()` and `is_persistent() == false`:
+   `crates/zer0-core/src/ffi_tests.rs::a_session_file_that_cannot_be_opened_is_reported_and_never_written_to`.
+2. `save()` in that state leaving the file on disk **byte-identical** — the real
+   guarantee, and not the same thing as `save()` returning `Ok`:
+   `crates/zer0-core/src/ffi_tests.rs::a_session_that_opens_but_cannot_be_read_is_never_written_over`,
+   which corrupts the contents of a database that opens fine and asserts
+   `load_error` and `is_persistent()` as well.
+3. On the Swift side, `BrowserModel.loadError` arriving populated and the banner
+   appearing, so the refusal to write is never silent:
+   `apple/Tests/Zer0ShellTests/SettingsTests.swift::SessionPersistenceTests/unreadableSessionWarnsInTheUI`.
 
-1. Write a file whose bytes are not a valid database (or a database with a
-   `spaces` table of an incompatible schema), open it with `Zer0::open`, and
-   assert `load_error().is_some()` and `is_persistent() == false`.
-2. Call `save()` in that state and assert the file on disk **did not change** —
-   which is the real guarantee, and is not the same thing as `save()` returning
-   `Ok`.
-3. On the Swift side, assert that `BrowserModel.loadError` arrives populated and
-   that the banner appears, so the refusal to write is never silent.
+`ffi_tests.rs::a_session_that_reads_fine_is_saved_as_usual` is the control: a
+healthy session reads `load_error` `None`, `is_persistent()` true, and `save()`
+still writes — without it, the byte-identical guarantee above would pass just as
+happily on a `save()` that never wrote anything to anywhere.
+
+Each has been seen failing under its named regression, broken on purpose.
+Keeping the `Store` alive in the `Err` arm of `Zer0::open` fails the
+read-failure test at its first assertion — `load_error().is_some()` — before any
+write, while the unopenable test and the healthy control stay green. Swallowing
+`load_error` in the could-not-open arm fails the unopenable test on the
+reporting assertion only, its bytes assertion not reached — the test stops at
+the reporting failure, and under that break the store stays detached so
+`save()` still no-ops — and fails the Swift test on both `loadError` and the
+banner. The controls staying green is what proves the mutations surgical.
 
 ## When to revisit
 
