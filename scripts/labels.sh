@@ -1,18 +1,24 @@
 #!/usr/bin/env bash
-# Applies the curated issue-label taxonomy to the repository this checkout
-# points at (gh resolves the target from the git remotes, so a fork labels
-# itself, never upstream).
+# Applies the curated issue-label taxonomy (FR-001) and the repository topic
+# set (FR-002) to the repository this checkout points at (gh resolves the
+# target from the git remotes, so a fork labels itself, never upstream).
 #
-# The taxonomy is repo-owned, not remote-only state. It lives in the table
-# below so that changing it is a reviewable diff, and running this script is
-# what makes the remote converge to the table: each row is create-or-edit, a
-# label that exists with the wrong colour or description is corrected rather
-# than reported, and re-running is always safe. Nothing is ever deleted. The
-# nine GitHub default labels are untouched for a structural reason, not a
-# careful one: the script cannot touch a name the table does not carry.
+# Both are repo-owned, not remote-only state. They live in the tables below so
+# that changing either is a reviewable diff, and running this script is what
+# makes the remote converge to the tables. Labels converge row by row: each
+# row is create-or-edit, a label that exists with the wrong colour or
+# description is corrected rather than reported, re-running is always safe,
+# and nothing is ever deleted — the nine GitHub default labels are untouched
+# for a structural reason, not a careful one: the script cannot touch a name
+# the table does not carry. Topics converge as one set: a topic the table does
+# not carry is removed, because a topic is a claim about what this project is
+# and only the table's claims were reviewed. That is what retires the four
+# broken topics (FR-002) — 'androi' and 'webki' name nothing, 'android' and
+# 'windows' name hosts the repo does not have.
 #
-# The set is closed (FR-001): adding a label is a human decision, and the row
-# in this table is that decision written down where it can be reviewed.
+# Both sets are closed (FR-001, FR-002): adding a label or a topic is a human
+# decision, and the row in a table is that decision written down where it can
+# be reviewed.
 set -euo pipefail
 
 # name|colour|description — the pipe is the field separator, so no field may
@@ -40,6 +46,26 @@ priority:medium|FBCA04|Real work with no deadline pressure; scheduled behind the
 priority:low|0E8A16|Genuinely deferrable; sitting here should cost nobody any guilt.
 status:blocked|454B54|Cannot move until a named thing changes; the issue body must say what unblocks it.
 epic|A87900|Roadmap tracking issue: a checklist body citing the governing ADRs. Never a task itself.
+EOF
+)"
+
+# One topic per line — a topic is a single word, so there is no field
+# separator to abuse. The order is the spec's (FR-002); 'apple' is listed
+# last because it is the one pre-existing topic the table keeps rather than
+# curates.
+TOPIC_TABLE="$(
+	cat <<'EOF'
+browser
+webkit
+rust
+swift
+macos
+linux
+ios
+zer0-browser
+open-source
+web-browser
+apple
 EOF
 )"
 
@@ -71,6 +97,18 @@ if [[ -n "$dup_colours" ]]; then
 	exit 1
 fi
 
+bad_topics="$(printf '%s\n' "$TOPIC_TABLE" | grep -Ev "^[a-z0-9]+(-[a-z0-9]+)*$" || true)"
+if [[ -n "$bad_topics" ]]; then
+	printf 'error: malformed topic(s); GitHub takes lowercase letters and digits in hyphen-separated words:\n%s\n' "$bad_topics" >&2
+	exit 1
+fi
+
+dup_topics="$(printf '%s\n' "$TOPIC_TABLE" | sort | uniq -d)"
+if [[ -n "$dup_topics" ]]; then
+	printf 'error: the same topic appears twice in the table:\n%s\n' "$dup_topics" >&2
+	exit 1
+fi
+
 # --- apply ------------------------------------------------------------------
 
 apply_label() {
@@ -97,3 +135,38 @@ while IFS='|' read -r name colour description; do
 done <<<"$LABEL_TABLE"
 
 echo "==> labels: ${count} applied; nothing deleted; the GitHub defaults are not in the table and were not touched"
+
+# --- topics ------------------------------------------------------------------
+#
+# The label half converges row by row because gh offers one call per label;
+# the topic half converges as one set because gh rewrites the whole list in a
+# single call — there is no window where the repository carries half a set.
+# Idempotence is cheaper than that: the edit is not issued at all when the
+# remote already matches the table, so re-running is a read, not a write.
+
+echo "==> topics"
+current_topics="$(gh repo view --json repositoryTopics --jq '.repositoryTopics[].name' | sort)"
+table_topics="$(printf '%s\n' "$TOPIC_TABLE" | sort)"
+
+if [[ "$current_topics" == "$table_topics" ]]; then
+	echo "    already converged; no edit issued"
+else
+	# comm wants sorted input: -13 keeps table-only lines (to add), -23 keeps
+	# remote-only lines (to remove).
+	to_add="$(comm -13 <(printf '%s\n' "$current_topics") <(printf '%s\n' "$table_topics"))"
+	to_remove="$(comm -23 <(printf '%s\n' "$current_topics") <(printf '%s\n' "$table_topics"))"
+
+	topics_args=()
+	while IFS= read -r topic; do
+		[[ -n "$topic" ]] || continue
+		topics_args+=(--add-topic "$topic")
+		printf '  + %s\n' "$topic"
+	done <<<"$to_add"
+	while IFS= read -r topic; do
+		[[ -n "$topic" ]] || continue
+		topics_args+=(--remove-topic "$topic")
+		printf '  - %s\n' "$topic"
+	done <<<"$to_remove"
+
+	gh repo edit "${topics_args[@]}" >/dev/null
+fi
