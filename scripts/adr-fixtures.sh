@@ -249,6 +249,24 @@ if (( rejections != EXPECTED_REJECTIONS )); then
   the only thing holding a rule up, then lower the number."
 fi
 
+# One line of scripts/check.sh is the single point of failure for the whole
+# mechanism: the call to adr-check.sh. A guard inside adr-check.sh would never
+# run under exactly the failure it defends — the script that stopped being
+# called cannot notice. This suite is the only thing check.sh runs before that
+# line, so the guard lives here.
+check_gate_call() {
+    if ! grep -qE '^[[:space:]]*\./scripts/adr-check\.sh([^a-zA-Z0-9_-]|$)' scripts/check.sh; then
+        fail "scripts/check.sh no longer calls scripts/adr-check.sh.
+  That call is the single point of failure for the whole decision-record
+  mechanism (ADR-0032). A green run from a check.sh that skipped the record
+  means every lock in the repo reports green forever, with nothing red
+  anywhere. This suite runs before that line, which is why the guard lives
+  here."
+    fi
+}
+
+check_gate_call
+
 echo "==> adr fixtures: $checked cases"
 
 if (( failures > 0 )); then

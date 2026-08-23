@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-04-13
-- **Lock:** `scripts/adr-fixtures.sh::expect_rejected`, `scripts/adr-fixtures.sh::expect_accepted`
+- **Lock:** `scripts/adr-fixtures.sh::expect_rejected`, `scripts/adr-fixtures.sh::expect_accepted`, `scripts/adr-fixtures.sh::check_gate_call`
 
 ## Context
 
@@ -106,8 +106,10 @@ is the first thing it defends.
 
 - **The gate call is removed from `check.sh` during a merge conflict.** One line
   disappears. Nothing fails, ever again, and the directory silently reverts to a
-  museum. This is the most likely regression by a wide margin, and nothing in
-  this repo detects it.
+  museum. This is the most likely regression by a wide margin. The disappearance
+  of that one line is detected: the fixture suite runs one line earlier and
+  `check_gate_call` goes red. That is detection of the one line, not immunity —
+  deleting the fixtures call in the same edit still silences everything.
 - **`none — debt` becomes the default.** It is always available and always
   passes. Nobody decides to stop locking decisions; it just becomes what one
   types when in a hurry, and the debt count climbs past the point where anyone
@@ -135,6 +137,3 @@ is the first thing it defends.
 - When the record grows past roughly fifty ADRs. Sequential numbering with fixed
   ranges is fine at twenty and will feel arbitrary at eighty; that is the moment
   to reconsider ranges, not to renumber.
-- If a way appears to check that `check.sh` still calls this script. That is
-  currently the single point of failure for the whole mechanism, and it is
-  undefended.
