@@ -136,6 +136,27 @@ covers every symptom equally is usually covering for not having looked.
 - Simple beats clever. Deleting code beats writing it. Solve the problem in
   front of you, not the one you can imagine.
 
+## Where an agent may not go
+
+Some files are outputs, not sources. Never hand-edit the uniffi bindings under
+`apple/Sources/Zer0Core*/` (`apple/scripts/build-core.sh` writes them), the
+ADR index (`scripts/adr-check.sh --index`), `Cargo.lock`,
+`apple/ios/Zer0Core.xcframework`, or a `.build/` directory. Change the input
+and regenerate: an edit that cannot survive the next build is a lie with a
+timestamp on it.
+
+- An accepted ADR is history. Change a decision by writing one that supersedes
+  it, never by rewriting `docs/adr/` in place.
+- Never weaken, skip, or widen a gate `scripts/check.sh` runs. A gate that can
+  be negotiated is not a gate.
+- Never touch credentials or CI secrets, even to "fix" a failure.
+- `DESIGN.md` and `design/` change through `design/tokens.toml` and the
+  token-check harness; the tokens are the input, everything else is output.
+- `.github/workflows/` changes only on an explicit human request.
+
+Commit and push stay forbidden by `Working rules`; this list is what may not
+be touched even in a change prepared for the author.
+
 ## When you find something wrong
 
 Say it plainly and keep working. A defect named in one sentence is worth more

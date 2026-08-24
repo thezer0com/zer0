@@ -16,6 +16,23 @@ mechanical half: how to build, how to verify, and where things are.
 There is no Linux shell yet. The core builds and its tests run on Linux, and CI
 keeps it that way on purpose — see [CI](#ci).
 
+## Finding work
+
+Issues are labelled on three axes: `area:*` is where, `kind:*` is what,
+`priority:*` is when. The [`epic`](https://github.com/thezer0com/zer0/labels/epic)
+issues are the roadmap, not tasks — each is a checklist body citing its
+governing ADRs.
+
+[`good first issue`](https://github.com/thezer0com/zer0/labels/good%20first%20issue)
+means genuinely small, not small-looking. If it turns out wider than it
+reads, say so and the label moves — pushing through does not.
+
+[`kind:debt-lock`](https://github.com/thezer0com/zer0/labels/kind%3Adebt-lock)
+is the ADR debt inventory: every such issue pays one live `Lock: none — debt`
+line in `docs/adr/` down into a real lock. No count is written here because
+it would be stale by the time you read it — `grep -rl "none — debt" docs/adr/`
+is the number that is true right now.
+
 ## Build
 
 ```sh
@@ -168,6 +185,14 @@ is written down as unverified. Both are better than an assertion nobody checked.
 - **Linux** — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` on
   the core alone. This one exists to prove the core stays free of Apple
   assumptions well before a Linux engine host exists.
+
+## Reporting bugs and security
+
+Bugs start from the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/) —
+they ask for what a fix will need anyway. A vulnerability never goes there:
+the tracker is public, and the wrong door is worse than a delay.
+[`SECURITY.md`](SECURITY.md) says what is in scope and how to report in
+private.
 
 ## Licence
 

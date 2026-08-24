@@ -107,14 +107,19 @@ individually reasonable.
   exhaustiveness goes with it, and no line in the diff says so.
 - **What a person would notice:** nothing, for a while. Then a menu item that
   does nothing when clicked. Or a keyboard shortcut that works everywhere except
-  the one place it should. Or — the case already live in this repo — a browser
-  extension that never learns a tab's favicon changed, with no error anywhere,
-  because the notification path had a `default:` and the new fact fell into it.
+the one place it should. Or — the case once live in this repo — a browser
+extension that never learns a tab's favicon changed, with no error anywhere,
+because the notification path had a `default:` and the new fact fell into it.
 
-**No lock — and this is the interesting part.** No test can observe the absence
-of a `default:`. What enforces this rule is the compiler refusing to compile,
-and a test cannot watch a compilation that never happened. Two existing tests
-look like they cover it and do not:
+**No lock a runtime could carry — and this is the interesting part.** No test
+can observe the absence of a `default:`. What enforces this rule is the
+compiler refusing to compile, and a test cannot watch a compilation that never
+happened. *Factual correction: this paragraph used to end "so the field says
+debt", and it was right at the time — the compiler and review were all there
+was. The lint the rest of this section described as the shape of that debt has
+since been built, and the `Lock:` line above now names it: a source scan that
+reads the vocabulary out of the generated bindings and fails on any wildcard
+arm over it.* Two existing tests look like they cover it and do not:
 
 - `apple/Tests/Zer0ShellTests/ShortcutTests.swift::ShortcutTests/everyBoundCommandIsHandled`
   iterates the keymap and calls `perform` on each bound command. It proves those
@@ -125,34 +130,27 @@ look like they cover it and do not:
   has the same shape and the same limit.
 
 Naming either as this ADR's lock would be exactly the failure ADR-0018 is about:
-claiming proof we do not have. So the field says debt.
+claiming proof we do not have.
 
-**Known violation, named rather than hidden:**
-`apple/Sources/Zer0Shell/BrowserModel.swift:197` — `default: break` in a switch
-over `Action`, inside `notifyExtensions(of action: Action)`. It is a real
-instance of the failure mode this ADR describes: an `Action` that should reach
-the WebExtension API but is not listed will compile and never arrive. The fix is
-the one its sibling function twelve lines below already uses — replace
-`default: break` with the explicit list of variants that have nothing to do.
-Every other switch over `UiCommand`, `EngineCommand` and `Action` in the shell,
-and every `match` over them in the core, is exhaustive today.
+**The violation this section was written to name is fixed.** *Factual
+correction: this recorded `default: break` in a switch over `Action`, inside
+`notifyExtensions(of action:)` at `apple/Sources/Zer0Shell/BrowserModel.swift:197`
+— named rather than hidden, an honest picture of the repo as it was.* It has
+since been fixed by the fix this ADR prescribed: `notifyExtensions(of:)` lists
+its no-op variants by name, the pattern its sibling
+`notifyExtensions(of commands:)` already used. An `Action` that ought to reach
+the WebExtension API now has to be listed to compile.
 
-A real lock is a lint rather than a test: something that walks the switches over
-these types and fails on a wildcard arm. *That was written as the shape of the
-debt; it has since been built, and is what the `Lock:` line now names.* Two
-`#[allow]`s survive, each with a stated reason and each over a foreign enum —
+Two `#[allow]`s survive, each with a stated reason and each over a foreign enum —
 `toml_edit::Item` and `serde_json::Value`, both parsing something a stranger
 wrote. Every other site that was expected to need silencing turned out to be a
 filter rather than a dispatch and was rewritten instead, which uncovered two
-genuine violations of this ADR that nobody had noticed.
+genuine violations of this ADR that nobody had noticed. Every switch over
+`UiCommand`, `EngineCommand` and `Action` in the shell, and every `match` over
+them in the core, is exhaustive today.
 
 ## When to revisit
 
-- If a lint that can see wildcard arms over these types becomes cheap to write.
-  That is what converts this ADR from debt into a lock, and it is the only thing
-  that will.
-- When the violation at `BrowserModel.swift:197` is fixed. This ADR should be
-  superseded by one that can say the rule holds without an exception.
 - If a command enum grows past the point where an exhaustive switch is
   readable. The answer is to split the vocabulary, not to add a wildcard.
 - If a third host appears. The cost of a protocol change is currently two

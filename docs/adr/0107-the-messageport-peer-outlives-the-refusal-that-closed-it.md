@@ -2,8 +2,8 @@
 
 - **Status:** Accepted, debt
 - **Date:** 2026-08-11
-- **Lock:** none — debt
-- **Debt note:** the test that would defend this — `aRefusalFramesAReasonTheWorkerCanRead` in `apple/Tests/Zer0ShellTests/NativeMessagingTests.swift`, exercising `NativeMessagingHost.gate` — does not exist yet. This record names the bug it would defend, so the next time `gate` is touched the question of whether the reason still arrives is on this page rather than in nobody's memory.
+- **Lock:** `apple/Tests/Zer0ShellTests/NativeMessagingTests.swift::NativeMessagingGateTests/aRefusalFramesAReasonTheWorkerCanRead`
+- **Debt note:** the framing half of this decision is locked. The test above drives `NativeMessagingHost.gate`'s refusal branch end to frame: the opened failure string is the core's sentence verbatim, and `NativeMessagingRefusal.said`'s `errorDescription` — read both as Swift spells it and as `NSError.localizedDescription`, the road WebKit takes when it hands the worker its `onDisconnect` reason — is that same sentence. Only the peer-lifetime half remains declined: nothing proves the `MessagePortPeer` survives long enough for WebKit to read the frame (see Context), so a refusal can still arrive as `Error: None`. The status stays debt for that half.
 
 ## Context
 
@@ -138,8 +138,10 @@ one named above, not a permanent one.
 **"The error string changed and nobody noticed."** `NativeMessagingRefusal.said`
 is a `LocalizedError` whose `errorDescription` is the sentence the core framed.
 If somebody tidies that to a shorter string for the popup's benefit, the
-worker reads a different sentence than `host_tests.rs` framed, and the only
-test that would catch it is the one this ADR declines to write.
+worker reads a different sentence than `host_tests.rs` framed — and the lock
+above goes red, proved by mutation: a tidied constant in `errorDescription`
+fails the lock while `aRefusalStartsNothingAndSaysWhy` stays green, because
+the two defend different frames.
 
 **"A second extension needed the reason and we still had not written the
 test."** The revisit condition below, arriving. The honest move then is to

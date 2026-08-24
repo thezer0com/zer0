@@ -78,6 +78,8 @@ by the engine.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Build steps, generated bindings, and how a decision gets recorded. |
 | [`docs/webkit.md`](docs/webkit.md) | Running against a newer WebKit, embedding one, and the signing consequences. |
 | [`docs/licensing.md`](docs/licensing.md) | The dependency audit and the LGPL compliance checklist. Read before a release, not after. |
+| [Roadmap](https://github.com/thezer0com/zer0/labels/epic) | What is intended, not what is done: the pinned epics — [first release](https://github.com/thezer0com/zer0/issues/2), [Linux](https://github.com/thezer0com/zer0/issues/3), [core debt](https://github.com/thezer0com/zer0/issues/8) — and the `epic` label for the rest. |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability: in private, never as a public issue. |
 
 ## Licence
 

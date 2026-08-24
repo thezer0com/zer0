@@ -101,6 +101,39 @@ struct NativeMessagingGateTests {
         #expect(failure == "/m.json does not list this extension.")
     }
 
+    /// The sentence is only half of what a refusal owes. The worker does not
+    /// read this browser's string; it reads the *frame* WebKit builds from the
+    /// error the completion carries — `NativeMessagingRefusal.said`'s
+    /// `errorDescription`, and then `NSError.localizedDescription`, which is
+    /// the road the reason travels once the ObjC bridge takes over. A refusal
+    /// that says the right thing and frames the wrong thing is ADR-0107's
+    /// "the error string changed and nobody noticed": one frame above what
+    /// `aRefusalStartsNothingAndSaysWhy` defends.
+    @Test func aRefusalFramesAReasonTheWorkerCanRead() throws {
+        let rig = Rig()
+        let sentence = "/m.json does not list this extension."
+        rig.outcome = .refused(
+            refusal: .notForThisExtension(manifestPath: "/m.json"),
+            sentence: sentence
+        )
+        var failure: String?
+
+        rig.host.connect(
+            extensionId: "a", applicationId: "com.example.thing", peer: FakePeer()
+        ) { failure = $0 }
+
+        #expect(failure == sentence)
+
+        // What `webExtensionController(_:connectUsing:…)` hands WebKit is the
+        // sentence wrapped in `NativeMessagingRefusal.said`. The worker's
+        // `onDisconnect` reason is that error's description — as Swift spells
+        // it and as the bridge spells it, because the bridge is what WebKit
+        // reads.
+        let said = NativeMessagingRefusal.said(try #require(failure))
+        #expect(said.errorDescription == sentence)
+        #expect((said as NSError).localizedDescription == sentence)
+    }
+
     /// Absence is *not asked*, and not asked is not yes. Nothing starts while
     /// the question is on screen.
     @Test func aProgramNobodyHasBeenAskedAboutDoesNotStartYet() {

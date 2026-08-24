@@ -77,3 +77,4 @@ xcuserdata/
 .playwright-mcp/
 *.profraw
 *.log
+.omo/
