@@ -89,7 +89,7 @@ final class ChatProviderHost {
         case .createWebView, .adoptWebView, .destroyWebView, .loadUrl, .reload, .goBack, .goForward,
              .focusWebView, .setMuted, .setZoom, .deleteDataStore, .acceptDownload,
              .askDownloadDestination, .cancelDownload, .startDownload, .resumeDownload,
-             .printPage, .fetchIcon,
+             .printPage, .fetchIcon, .copyImage,
              .runToolCall, .cancelToolCall, .capturePageContext, .listTools(_),
              .raiseWindow(_),
              // A browser window is a scene. This host has no views and no

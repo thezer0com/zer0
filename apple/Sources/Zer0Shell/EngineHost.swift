@@ -930,12 +930,30 @@ final class EngineHost {
     /// Site icons, fetched outside every web view on purpose. See `SiteIcons`.
     let icons = IconFetcher()
 
+    /// Images a person chose to copy, fetched through the space's jar on
+    /// purpose — the opposite of the line above, for the opposite reason. See
+    /// `ImageCopy`.
+    let imageCopy: ImageCopy
+    private var imageCopyJobs: [TabId: (generation: UUID, task: Task<Void, Never>)] = [:]
+
     /// Set by the model so engine events can travel back into the reducer.
     var emit: (@MainActor (Action) -> Void)? {
         didSet {
             downloads.emit = emit
             icons.emit = emit
         }
+    }
+
+    /// Where a finished image copy's outcome lands. Set by the model, and
+    /// deliberately not an `Action`: the pasteboard is the shell's, nothing
+    /// about the browser moved, and the notice the outcome becomes is local
+    /// feedback — the core stays the behaviour authority (ADR-0091's
+    /// revisit, issue #124).
+    var imageCopyWindow: (@MainActor (TabId) -> WindowId?)?
+    var imageCopyReported: (@MainActor (WindowId, ImageCopy.Outcome) -> Void)?
+
+    init(imageCopy: ImageCopy = ImageCopy()) {
+        self.imageCopy = imageCopy
     }
 
     /// The engine settings a person can change (ADR-0074).
@@ -1207,6 +1225,7 @@ final class EngineHost {
             pending.adopted = view
 
         case let .destroyWebView(tab):
+            cancelImageCopy(for: tab)
             hosted[tab]?.webView.stopLoading()
             hosted.removeValue(forKey: tab)
 
@@ -1246,6 +1265,30 @@ final class EngineHost {
 
         case let .startDownload(tab, url):
             startDownload(url, in: tab)
+
+        case let .copyImage(tab, url):
+            guard let window = imageCopyWindow?(tab) else { return }
+            cancelImageCopy(for: tab)
+            // Through the tab's own view or not at all: the fetch carries
+            // that space's cookie jar, and a copy through the wrong jar
+            // copies a sign-in page (ADR-0027's reason, at the pasteboard).
+            guard let view = hosted[tab]?.webView else {
+                // Refused out loud rather than dropped: the row promised
+                // something, and a tab that closed mid-fetch is the one
+                // failure the person can still do something about. The
+                // gesture that reaches this is macOS's context menu today;
+                // the executor carries no platform's decision, so a future
+                // iOS surface inherits a copy that already answers.
+                imageCopyReported?(window, .failed(.noTabPage))
+                return
+            }
+            let generation = UUID()
+            let task = imageCopy.copy(url: url, from: view) { [weak self] outcome in
+                guard self?.imageCopyJobs[tab]?.generation == generation else { return }
+                self?.imageCopyJobs.removeValue(forKey: tab)
+                self?.imageCopyReported?(window, outcome)
+            }
+            imageCopyJobs[tab] = (generation, task)
 
         case let .resumeDownload(tab, id):
             // The view is handed over even when it is gone: unlike a start, the
@@ -1346,6 +1389,11 @@ final class EngineHost {
             // command is not silently dropped.
             break
         }
+    }
+
+    private func cancelImageCopy(for tab: TabId) {
+        let job = imageCopyJobs.removeValue(forKey: tab)
+        job?.task.cancel()
     }
 }
 

@@ -83,6 +83,7 @@ mod session;
 mod session_store;
 mod shortcuts;
 mod site_permissions;
+mod site_zoom;
 mod sse;
 #[cfg(feature = "store")]
 mod storable;
@@ -222,6 +223,7 @@ pub use site_permissions::{
     SitePermissions, SiteVerdict, answered_too_soon, canonical_origin,
     gate as gate_site_permission, origin_of,
 };
+pub use site_zoom::{SiteZooms, StoredZoom};
 #[cfg(feature = "store")]
 pub use storable::{StorableDownload, StorableDownloadState, StorableSession, StorableSpace};
 #[cfg(feature = "store")]

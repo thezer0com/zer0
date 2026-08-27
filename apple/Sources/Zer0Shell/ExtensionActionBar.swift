@@ -64,6 +64,9 @@ struct ExtensionActionBar: View {
         /// the largest icon any manifest declares, and small enough that
         /// decoding one cannot be an attack (ADR-0022).
         static let absurdIcon: CGFloat = 1024
+        /// The unread dot's diameter. Small enough to be a mark rather than a
+        /// control's face; the hit area around it is the button's own target.
+        static let unread: CGFloat = 6
     }
 
     var body: some View {
@@ -76,34 +79,66 @@ struct ExtensionActionBar: View {
     }
 
     private var content: some View {
-        // Horizontal, and scrolling, for the reason the space chips scroll:
-        // the number of extensions is not bounded by the width of a sidebar,
-        // and squeezing is how six of them become six identical smudges.
-        ScrollView(.horizontal) {
-            HStack(spacing: Design.Space.hair) {
-                ForEach(Array(model.pinnedExtensions.enumerated()), id: \.element.id) { index, ext in
-                    ExtensionActionButton(
-                        extension: ext,
-                        // 1-based, as printed on the keyboard and as the core
-                        // counts. Only the first nine have a chord; the rest
-                        // are reachable with the pointer, and saying so is
-                        // better than printing a chord that does nothing.
-                        chordIndex: index < 9 ? UInt8(index + 1) : nil,
-                        ink: ink,
-                        popoverEdge: popoverEdge,
-                        isKeyWindow: windowId == model.snapshot.keyWindow
-                    )
+        // The dot, when it is up, is laid out *beside* the scroll rather than
+        // overlaid on it: an overlay is fixed to the viewport while the
+        // buttons scroll, and a button sliding under the dot is precisely the
+        // thing this structure exists to prevent.
+        HStack(spacing: 0) {
+            // Horizontal, and scrolling, for the reason the space chips scroll:
+            // the number of extensions is not bounded by the width of a sidebar,
+            // and squeezing is how six of them become six identical smudges.
+            ScrollView(.horizontal) {
+                HStack(spacing: Design.Space.hair) {
+                    ForEach(Array(model.pinnedExtensions.enumerated()), id: \.element.id) { index, ext in
+                        ExtensionActionButton(
+                            extension: ext,
+                            // 1-based, as printed on the keyboard and as the core
+                            // counts. Only the first nine have a chord; the rest
+                            // are reachable with the pointer, and saying so is
+                            // better than printing a chord that does nothing.
+                            chordIndex: index < 9 ? UInt8(index + 1) : nil,
+                            ink: ink,
+                            popoverEdge: popoverEdge,
+                            isKeyWindow: windowId == model.snapshot.keyWindow
+                        )
+                    }
                 }
             }
+            .scrollIndicators(.hidden)
+            // Without this the scroll view claims every point it is offered and the
+            // row eats the list above it — the same defect the space bar has a line
+            // about.
+            .fixedSize(horizontal: false, vertical: true)
+            // A button arriving or leaving is a thing appearing where there was
+            // none, which is what `entrance` is for.
+            .motion(.entrance, value: model.pinnedExtensions.count)
+
+            if model.extensionWaitingOffRow {
+                unreadDot
+            }
         }
-        .scrollIndicators(.hidden)
-        // Without this the scroll view claims every point it is offered and the
-        // row eats the list above it — the same defect the space bar has a line
-        // about.
-        .fixedSize(horizontal: false, vertical: true)
-        // A button arriving or leaving is a thing appearing where there was
-        // none, which is what `entrance` is for.
-        .motion(.entrance, value: model.pinnedExtensions.count)
+    }
+
+    /// A hidden extension's only channel (ADR-0128). Drawn on the row
+    /// because the row is what hid it, and clickable because a dot a
+    /// person notices will be clicked — the click goes where the hidden
+    /// extension can actually be reached.
+    private var unreadDot: some View {
+        Button {
+            model.perform(.showExtensions)
+        } label: {
+            Circle()
+                .fill(.tint)
+                .frame(width: Metrics.unread, height: Metrics.unread)
+                .frame(width: Metrics.target, height: Metrics.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("An extension not on this row has something waiting. Manage Extensions…")
+        .accessibilityLabel(
+            "An extension not on this row has something waiting"
+        )
+        .motion(.subtle, value: model.extensionWaitingOffRow)
     }
 }
 

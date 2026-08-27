@@ -59,6 +59,29 @@ struct ZZExtensionBarShots {
             )
         }
 
+        let fixtureId = String(repeating: "c", count: 32)
+        let fixture = extensions.appending(path: fixtureId)
+        try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+        try """
+        {
+            "manifest_version": 3,
+            "name": "zer0 unread visual fixture",
+            "version": "1.0.0",
+            "permissions": ["storage", "tabs"],
+            "action": {},
+            "background": { "service_worker": "background.js" }
+        }
+        """.write(
+            to: fixture.appending(path: "manifest.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "chrome.action.setBadgeText({ text: '3' });".write(
+            to: fixture.appending(path: "background.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+
         let model = BrowserModel(
             storagePath: profile.appending(path: "session.sqlite").path
         )
@@ -69,6 +92,26 @@ struct ZZExtensionBarShots {
         for installed in model.installedExtensions {
             let request = model.consentRequest(for: installed)
             await model.applyConsent(defaultConsentDecision(request: request, decidedAtMs: 1_000))
+        }
+
+        guard let hidden = model.installedExtensions.first(where: { $0.id == fixtureId }),
+              model.pinnedExtensions.contains(where: { $0.id != hidden.id }),
+              let active = model.snapshot.activeTab
+        else {
+            Issue.record("need a real extension plus the unread visual fixture")
+            return nil
+        }
+        model.setExtensionPinned(hidden.id, false)
+        let badgeArrived = await eventually {
+            model.extensions?.action(for: hidden.id, tab: active)?.badgeText == "3"
+        }
+        guard badgeArrived else {
+            Issue.record("the unread visual fixture did not publish its badge")
+            return nil
+        }
+        guard model.extensionWaitingOffRow else {
+            Issue.record("the visual fixture did not produce an unread extension off the row")
+            return nil
         }
         return (model, model.installedExtensions)
     }

@@ -653,6 +653,63 @@ fn a_host_that_declared_no_page_printing_answers_no_rebound_print_chord() {
     );
 }
 
+#[test]
+fn remembered_site_zooms_are_listed_by_space_then_origin() {
+    let zer0 = Zer0::in_memory(
+        "Personal".into(),
+        "ds-personal".into(),
+        HostCapabilities {
+            extension_runtime: false,
+            page_printing: false,
+        },
+    );
+    let personal = zer0.snapshot().active_space;
+    zer0.dispatch(Action::CreateSpace {
+        name: "Work".into(),
+        data_store_id: "ds-work".into(),
+        ephemeral: false,
+    });
+    let work = zer0.snapshot().active_space;
+    {
+        let mut state = zer0.lock();
+        state
+            .session
+            .site_zooms
+            .set(work, "https://z.example/page", 2.0);
+        state
+            .session
+            .site_zooms
+            .set(personal, "https://z.example/page", 1.5);
+        state
+            .session
+            .site_zooms
+            .set(personal, "https://a.example/page", 0.75);
+    }
+
+    let rows = zer0.site_zooms();
+
+    assert_eq!(
+        rows,
+        vec![
+            crate::site_zoom::StoredZoom {
+                space: personal,
+                origin: "https://a.example".into(),
+                factor: 0.75,
+            },
+            crate::site_zoom::StoredZoom {
+                space: personal,
+                origin: "https://z.example".into(),
+                factor: 1.5,
+            },
+            crate::site_zoom::StoredZoom {
+                space: work,
+                origin: "https://z.example".into(),
+                factor: 2.0,
+            },
+        ]
+    );
+}
+
 /// The version the core reports is the version Cargo built it as. A host that
 /// prints it — the iOS host's proof-of-life screen is the first — must never
 /// see a hand-copied string that survived a version bump.

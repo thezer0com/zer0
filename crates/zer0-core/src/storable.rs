@@ -43,6 +43,7 @@ use crate::routing::Route;
 use crate::session::Session;
 use crate::shortcuts::Binding;
 use crate::site_permissions::SiteGrant;
+use crate::site_zoom::StoredZoom;
 
 /// A session with everything that must not be stored already gone.
 ///
@@ -156,6 +157,10 @@ pub struct StorableSession {
     /// this whole module exists: a store cannot leave out a rule it was never
     /// given.
     pub site_permissions: Vec<SiteGrant>,
+    /// The zoom each origin is read at, minus every space that promised to
+    /// leave nothing behind — the same line the tabs and the permissions
+    /// above are held to (ADR-0023, ADR-0129).
+    pub site_zooms: Vec<StoredZoom>,
     pub preferences: Preferences,
 }
 
@@ -429,6 +434,16 @@ impl StorableSession {
                         .is_some_and(|space| !space.profile.ephemeral)
                 })
                 .cloned()
+                .collect(),
+            site_zooms: session
+                .site_zooms
+                .all()
+                .into_iter()
+                .filter(|zoom| {
+                    browser
+                        .space(zoom.space)
+                        .is_some_and(|space| !space.profile.ephemeral)
+                })
                 .collect(),
             preferences: session.preferences.clone(),
         }

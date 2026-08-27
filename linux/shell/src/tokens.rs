@@ -18,9 +18,9 @@ use toml_edit::DocumentMut;
 
 /// The palette tokens this shell paints chrome with, per appearance.
 ///
-/// Not all seventeen: the status colours and `companionRow` belong to surfaces
-/// (consent tiers, split rows) this v1 has not drawn yet. They stay in the
-/// file and arrive when a surface for them does.
+/// Not all seventeen: the image-copy notice now wears `warning`; the remaining
+/// status colours and `companionRow` stay in the file until a surface needs
+/// them.
 pub struct Palette {
     pub background: String,
     pub chrome: String,
@@ -38,6 +38,7 @@ pub struct Palette {
     pub accent_pressed: String,
     pub on_accent: String,
     pub selected_row: String,
+    pub warning: String,
 }
 
 /// The spacing rungs this shell's layout consumes.
@@ -396,6 +397,7 @@ fn palette(document: &DocumentMut, appearance: &str) -> Result<Palette, String> 
         accent_pressed: read("accentPressed")?,
         on_accent: read("onAccent")?,
         selected_row: read("selectedRow")?,
+        warning: read("warning")?,
     })
 }
 
@@ -594,6 +596,12 @@ pub fn css(tokens: &Tokens, dark: bool) -> String {
          button.zer0-action:hover {{ background-color: {accent_hover}; }}
          button.zer0-action:active {{ background-color: {accent_pressed}; }}
 
+         /* A transient image-copy answer rests over the page in the same
+            one-line language as the find bar (DESIGN.md §2, §4). */
+         .zer0-image-copy-notice {{ font-size: {row_pt}pt; font-weight: {row_weight}; background-color: {chrome}; color: {ink}; border: {hairline}px solid {rule}; border-radius: {rm}px; padding: {tight}px {snug}px; }}
+         .zer0-image-copy-notice image {{ color: {ink_secondary}; }}
+         .zer0-image-copy-failure {{ color: {warning}; }}
+
          /* Elevation (DESIGN.md §2): the three steps as box-shadows, straight
             from the TOML. Emitted though nothing in v1 wears them — no
             surface here has left another yet, and \"a shadow is earned by
@@ -614,6 +622,7 @@ pub fn css(tokens: &Tokens, dark: bool) -> String {
         accent_pressed = p.accent_pressed,
         on_accent = p.on_accent,
         selected_row = p.selected_row,
+        warning = p.warning,
         hover = hover,
         pressed = pressed,
         subtle = subtle,
@@ -691,6 +700,10 @@ mod tests {
         );
         assert!(css.contains("font-family: monospace;"), "{css}");
         assert!(css.contains("background-color: #837AE0;"), "{css}");
+        assert!(
+            css.contains(".zer0-image-copy-failure { color: #8F5600; }"),
+            "{css}"
+        );
         assert!(
             css.contains("transition: background-color 180ms ease-out"),
             "{css}"

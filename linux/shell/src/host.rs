@@ -10,6 +10,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gtk::glib;
@@ -28,6 +29,8 @@ use zer0_core::{
 
 use crate::tokens;
 use gtk::{gdk, gsk};
+
+mod image_copy;
 
 /// The host's facts and widgets, plus everything the window shows.
 struct Host {
@@ -52,6 +55,78 @@ struct Host {
     load_progress: Rc<Cell<f64>>,
     /// One web view per tab, as `CreateWebView`/`DestroyWebView` commanded.
     views: HashMap<TabId, WebView>,
+    /// Active image copies keep their originating tab beside WebKit's transfer
+    /// so destroying that tab can cancel exactly the work its page started.
+    image_copies: TabScoped<image_copy::ActiveCopy>,
+    next_image_copy_id: u64,
+    image_copy_notice: gtk::Revealer,
+    image_copy_notice_icon: gtk::Image,
+    image_copy_notice_label: gtk::Label,
+    image_copy_notice_state: ImageCopyNoticeState,
+    image_copy_notice_retreat: Option<glib::SourceId>,
+    image_copy_notice_linger: Duration,
+}
+
+struct TabScoped<T> {
+    items: HashMap<u64, (TabId, T)>,
+}
+
+impl<T> Default for TabScoped<T> {
+    fn default() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+}
+
+impl<T> TabScoped<T> {
+    fn insert(&mut self, id: u64, tab: TabId, item: T) {
+        self.items.insert(id, (tab, item));
+    }
+
+    fn remove(&mut self, id: u64) -> Option<T> {
+        self.items.remove(&id).map(|(_, item)| item)
+    }
+
+    fn take_for_tab(&mut self, tab: TabId) -> Vec<T> {
+        let ids = self
+            .items
+            .iter()
+            .filter_map(|(id, (owner, _))| (*owner == tab).then_some(*id))
+            .collect::<Vec<_>>();
+        ids.into_iter().filter_map(|id| self.remove(id)).collect()
+    }
+}
+
+#[derive(Default)]
+struct ImageCopyNoticeState {
+    generation: u64,
+    current: Option<(u64, image_copy::Outcome)>,
+}
+
+impl ImageCopyNoticeState {
+    fn replace(&mut self, outcome: image_copy::Outcome) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.current = Some((self.generation, outcome));
+        self.generation
+    }
+
+    fn retreat(&mut self, generation: u64) -> bool {
+        if self
+            .current
+            .is_some_and(|(current, _)| current == generation)
+        {
+            self.current = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[cfg(test)]
+    fn outcome(&self) -> Option<image_copy::Outcome> {
+        self.current.map(|(_, outcome)| outcome)
+    }
 }
 
 /// The shared state every closure holds, split so a GTK signal arriving while
@@ -117,7 +192,7 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
                     );
                     return;
                 }
-            }
+            };
             if navigation_state.is_some() {
                 not_carried_out_yet(
                     "CreateWebView with navigation state",
@@ -172,6 +247,9 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
             host.views.insert(tab, view);
         }
         EngineCommand::DestroyWebView { tab } => {
+            for copy in host.image_copies.take_for_tab(tab) {
+                copy.cancel();
+            }
             if let Some(view) = host.views.remove(&tab) {
                 host.stack.remove(&view);
             }
@@ -270,6 +348,37 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
             "StartDownload",
             &format!("no download of {url}: WebKitGTK's download signals are not wired up"),
         ),
+        EngineCommand::CopyImage { tab, url } => {
+            let copy_id = host.next_image_copy_id;
+            host.next_image_copy_id = host.next_image_copy_id.wrapping_add(1);
+            let Some(view) = host.views.get(&tab).cloned() else {
+                report_image_copy(
+                    app,
+                    &mut host,
+                    tab,
+                    image_copy::Outcome::Failed(image_copy::Failure::NoTabPage),
+                );
+                return;
+            };
+            let app_for_report = Rc::downgrade(app);
+            match image_copy::start(&view, &url, move |outcome| {
+                let Some(app) = app_for_report.upgrade() else {
+                    return;
+                };
+                gtk::glib::idle_add_local_once(move || {
+                    let mut host = app.host.borrow_mut();
+                    host.image_copies.remove(copy_id);
+                    report_image_copy(&app, &mut host, tab, outcome);
+                });
+            }) {
+                Ok(copy) => {
+                    host.image_copies.insert(copy_id, tab, copy);
+                }
+                Err(failure) => {
+                    report_image_copy(app, &mut host, tab, image_copy::Outcome::Failed(failure));
+                }
+            }
+        }
         EngineCommand::FetchIcon { host: site, .. } => not_carried_out_yet(
             "FetchIcon",
             &format!("no icon fetch for {site} yet; the tab bar draws letters"),
@@ -306,6 +415,74 @@ fn perform(app: &Rc<App>, command: EngineCommand) {
 /// otherwise is how affordance lies start (ADR-0018, ADR-0103).
 fn not_carried_out_yet(what: &str, why: &str) {
     eprintln!("zer0-linux: no implementation yet for {what} — {why}");
+}
+
+fn report_image_copy(app: &Rc<App>, host: &mut Host, tab: TabId, outcome: image_copy::Outcome) {
+    let (message, failed) = match outcome {
+        image_copy::Outcome::Copied => ("Image copied", false),
+        image_copy::Outcome::Failed(image_copy::Failure::InvalidAddress) => {
+            ("The image's address couldn't be used.", true)
+        }
+        image_copy::Outcome::Failed(image_copy::Failure::NoTabPage) => {
+            ("The tab closed before the image could be copied.", true)
+        }
+        image_copy::Outcome::Failed(image_copy::Failure::NotAnImage) => {
+            ("What came back wasn't an image.", true)
+        }
+        image_copy::Outcome::Failed(image_copy::Failure::TooLarge) => {
+            ("The image is too large to copy.", true)
+        }
+        image_copy::Outcome::Failed(image_copy::Failure::Unreachable) => {
+            ("The image couldn't be fetched.", true)
+        }
+        image_copy::Outcome::Failed(image_copy::Failure::Clipboard) => {
+            ("The clipboard refused the image.", true)
+        }
+    };
+    match outcome {
+        image_copy::Outcome::Copied => {
+            eprintln!("zer0-linux: copied image in tab {tab:?}");
+        }
+        image_copy::Outcome::Failed(failure) => {
+            eprintln!("zer0-linux: could not copy image in tab {tab:?}: {failure:?}");
+        }
+    }
+    host.image_copy_notice_label.set_text(message);
+    let announcement = if failed {
+        format!("Couldn't copy the image. {message}")
+    } else {
+        message.to_string()
+    };
+    host.image_copy_notice
+        .announce(&announcement, gtk::AccessibleAnnouncementPriority::Medium);
+    if failed {
+        host.image_copy_notice_label
+            .add_css_class("zer0-image-copy-failure");
+    } else {
+        host.image_copy_notice_label
+            .remove_css_class("zer0-image-copy-failure");
+    }
+    host.image_copy_notice_icon.set_visible(!failed);
+    host.image_copy_notice.set_reveal_child(true);
+
+    if let Some(retreat) = host.image_copy_notice_retreat.take() {
+        retreat.remove();
+    }
+    let generation = host.image_copy_notice_state.replace(outcome);
+    let app = Rc::downgrade(app);
+    host.image_copy_notice_retreat = Some(glib::timeout_add_local_once(
+        host.image_copy_notice_linger,
+        move || {
+            let Some(app) = app.upgrade() else {
+                return;
+            };
+            let mut host = app.host.borrow_mut();
+            if host.image_copy_notice_state.retreat(generation) {
+                host.image_copy_notice.set_reveal_child(false);
+                host.image_copy_notice_retreat = None;
+            }
+        },
+    ));
 }
 
 /// Engine facts about a load, reported back as the actions the core expects.
@@ -808,6 +985,26 @@ pub(crate) fn app_for(
     overlay.set_child(Some(&stack));
     overlay.add_overlay(&load_bar);
 
+    let image_copy_notice_icon = gtk::Image::from_icon_name("object-select-symbolic");
+    let image_copy_notice_label = gtk::Label::new(None);
+    let image_copy_notice_row =
+        gtk::Box::new(gtk::Orientation::Horizontal, design.spacing.tight as i32);
+    image_copy_notice_row.add_css_class("zer0-image-copy-notice");
+    image_copy_notice_row.add_css_class("elevation-resting");
+    image_copy_notice_row.append(&image_copy_notice_icon);
+    image_copy_notice_row.append(&image_copy_notice_label);
+
+    let image_copy_notice = gtk::Revealer::new();
+    image_copy_notice.set_transition_type(gtk::RevealerTransitionType::SlideUp);
+    image_copy_notice.set_transition_duration((design.durations.quick * 1000.0).round() as u32);
+    image_copy_notice.set_halign(gtk::Align::Start);
+    image_copy_notice.set_valign(gtk::Align::End);
+    image_copy_notice.set_margin_start(design.spacing.regular as i32);
+    image_copy_notice.set_margin_bottom(design.spacing.loose as i32);
+    image_copy_notice.set_child(Some(&image_copy_notice_row));
+    image_copy_notice.set_reveal_child(false);
+    overlay.add_overlay(&image_copy_notice);
+
     let column = gtk::Box::new(gtk::Orientation::Vertical, 0);
     column.append(&tab_bar);
     column.append(&overlay);
@@ -840,6 +1037,14 @@ pub(crate) fn app_for(
             load_bar,
             load_progress,
             views: HashMap::new(),
+            image_copies: TabScoped::default(),
+            next_image_copy_id: 0,
+            image_copy_notice,
+            image_copy_notice_icon,
+            image_copy_notice_label,
+            image_copy_notice_state: ImageCopyNoticeState::default(),
+            image_copy_notice_retreat: None,
+            image_copy_notice_linger: Duration::from_secs_f64(design.durations.linger),
         }),
         queue: RefCell::new(VecDeque::new()),
         pumping: Cell::new(false),
@@ -1189,7 +1394,7 @@ impl Mark {
 
 #[cfg(test)]
 mod tests {
-    use super::{Key, UiCommand, key_for_keyval};
+    use super::{ImageCopyNoticeState, Key, TabScoped, UiCommand, image_copy, key_for_keyval};
     // A child module cannot see its parent's `use gtk4 as gtk`, so this names
     // the crate rather than the parent's alias.
     use gtk4::gdk;
@@ -1286,5 +1491,36 @@ mod tests {
             map.command_for_collapsed(&ctrl_tab),
             Some(UiCommand::NextTab)
         );
+    }
+
+    #[test]
+    fn tab_scoped_items_take_only_the_destroyed_tabs_copies() {
+        let first_tab = zer0_core::TabId(1);
+        let second_tab = zer0_core::TabId(2);
+        let mut copies = TabScoped::default();
+        copies.insert(7, first_tab, "first");
+        copies.insert(8, second_tab, "second");
+        copies.insert(9, first_tab, "third");
+
+        let mut removed = copies.take_for_tab(first_tab);
+        removed.sort_unstable();
+
+        assert_eq!(removed, vec!["first", "third"]);
+        assert_eq!(copies.remove(8), Some("second"));
+    }
+
+    #[test]
+    fn an_older_retreat_cannot_clear_a_replacing_image_copy_notice() {
+        let mut notice = ImageCopyNoticeState::default();
+        let older = notice.replace(image_copy::Outcome::Copied);
+        let newer = notice.replace(image_copy::Outcome::Failed(image_copy::Failure::TooLarge));
+
+        assert!(!notice.retreat(older));
+        assert_eq!(
+            notice.outcome(),
+            Some(image_copy::Outcome::Failed(image_copy::Failure::TooLarge))
+        );
+        assert!(notice.retreat(newer));
+        assert_eq!(notice.outcome(), None);
     }
 }

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 zer0-core = { path = "../../crates/zer0-core" }
+url.workspace = true
 # GTK4 and WebKitGTK's GTK4 API. `v4_14` because the mark widget draws through
 # `gsk::Path`, which the bindings only expose behind that feature (GSK gained
 # paths in 4.14) — and the older `v4_12` floor's reason, `load_from_string` in

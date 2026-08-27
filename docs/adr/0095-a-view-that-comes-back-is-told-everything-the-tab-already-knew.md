@@ -1,6 +1,6 @@
 # ADR-0095: A view that comes back is told everything the tab already knew, at one door
 
-- **Status:** Accepted
+- **Status:** Accepted, the per-site zoom paragraph superseded by ADR-0129
 - **Date:** 2026-08-10
 - **Lock:** `crates/zer0-core/src/reducer_tests.rs::a_restored_tab_is_drawn_at_the_zoom_it_was_left_at`, `crates/zer0-core/src/reducer_tests.rs::a_restored_tab_at_the_ordinary_size_is_told_nothing`, `crates/zer0-core/src/reducer_tests.rs::a_rebuilt_view_keeps_the_zoom_and_the_mute_the_tab_already_had`
 

@@ -36,6 +36,7 @@ use crate::session::Session;
 use crate::session_store::SessionStore;
 use crate::shortcuts::{Binding, Chord, UiCommand};
 use crate::site_permissions::{SiteCapability, SiteGrant, SitePermissionPrompt};
+use crate::site_zoom::StoredZoom;
 use crate::storable::StorableSession;
 use crate::store::Store;
 
@@ -1445,7 +1446,15 @@ impl Zer0 {
             .allowed_programs(&extension_id)
     }
 
-    // MARK: - What a site was allowed to point at you
+    // MARK: - How sites are drawn and what they may point at you
+
+    /// Every remembered site zoom, for the screen that resets them.
+    ///
+    /// Not in [`BrowserSnapshot`] for the same reason site permissions are not:
+    /// only one Settings pane reads this ledger.
+    pub fn site_zooms(&self) -> Vec<StoredZoom> {
+        self.lock().session.site_zooms.all()
+    }
 
     /// Every answer given to a site, for the screen that takes them back.
     ///

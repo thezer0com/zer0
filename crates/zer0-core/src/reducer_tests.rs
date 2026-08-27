@@ -5,8 +5,8 @@ use crate::certificates::{
 use crate::http_auth::{AuthChoice, AuthDecision, HttpAuthRequest, HttpAuthScheme};
 use crate::icons::IconCandidate;
 use crate::model::{
-    Browser, DEFAULT_SPLIT_RATIO, MAX_SPLIT_RATIO, MIN_SPLIT_RATIO, NavigationErrorKind, SpaceId,
-    SpaceProfile, TabId, TabKind,
+    Browser, NavigationErrorKind, SpaceId, SpaceProfile, TabId, TabKind, DEFAULT_SPLIT_RATIO,
+    MAX_SPLIT_RATIO, MIN_SPLIT_RATIO,
 };
 use crate::page_menu::{PageMenuItem, PageTarget};
 use crate::protocol::{Action, EngineCommand, ViewConfiguration};
@@ -188,20 +188,18 @@ fn events_for_a_closed_tab_are_ignored() {
     f.send(Action::CloseTab { tab });
 
     // These race with the close in the real engine. They must not panic.
-    assert!(
-        f.send(Action::TitleChanged {
+    assert!(f
+        .send(Action::TitleChanged {
             tab,
             title: "ghost".into()
         })
-        .is_empty()
-    );
-    assert!(
-        f.send(Action::NavigateTo {
+        .is_empty());
+    assert!(f
+        .send(Action::NavigateTo {
             tab,
             input: "a.com".into()
         })
-        .is_empty()
-    );
+        .is_empty());
     assert!(f.send(Action::GoBack { tab }).is_empty());
     assert!(f.send(Action::CloseTab { tab }).is_empty());
 }
@@ -460,14 +458,13 @@ fn a_failure_for_a_closed_tab_is_ignored() {
 
     // The engine reports asynchronously, so a load can fail after the user has
     // already closed the tab it was in.
-    assert!(
-        f.send(Action::NavigationFailed {
+    assert!(f
+        .send(Action::NavigationFailed {
             tab,
             kind: NavigationErrorKind::Offline,
             message: "offline".into(),
         })
-        .is_empty()
-    );
+        .is_empty());
     assert!(f.session.browser.tab(tab).is_none());
 }
 
@@ -2926,6 +2923,296 @@ fn a_rebuilt_view_keeps_the_zoom_and_the_mute_the_tab_already_had() {
     );
 }
 
+/// The whole of ADR-0129: a zoom is remembered for the site in the space it
+/// was set in, a tab arriving on that site is drawn at it, and a tab leaving
+/// it comes back to the ordinary size — the engine's own zoom survives a
+/// navigation, so nobody else may carry the last site's choice forward.
+#[test]
+fn a_zoom_is_remembered_for_the_site_in_that_space() {
+    let mut f = Fixture::new();
+    let first = f.open();
+    f.send(Action::NavigationCommitted {
+        tab: first,
+        url: "https://example.com/a".into(),
+    });
+    f.send(Action::SetTabZoom {
+        tab: first,
+        factor: 1.5,
+    });
+
+    let second = f.open();
+    let out = f.send(Action::NavigationCommitted {
+        tab: second,
+        url: "https://example.com/b".into(),
+    });
+    assert!(
+        out.contains(&EngineCommand::SetZoom {
+            tab: second,
+            factor: 1.5
+        }),
+        "a tab arriving on a zoomed site missed the site's zoom: {out:?}"
+    );
+
+    // And leaving the site leaves the size: the engine would have kept 1.5
+    // on the view, which is yesterday's per-tab behaviour wearing today's.
+    let out = f.send(Action::NavigationCommitted {
+        tab: second,
+        url: "https://example.org/".into(),
+    });
+    assert!(
+        out.contains(&EngineCommand::SetZoom {
+            tab: second,
+            factor: 1.0
+        }),
+        "a tab leaving a zoomed site kept the site's size: {out:?}"
+    );
+}
+
+/// A reset is the absence of a decision, not a decision to be 1.0: a row that
+/// remembered the ordinary size would be a row lying about being needed.
+#[test]
+fn a_zoom_reset_forgets_the_site_rather_than_remembering_one() {
+    let mut f = Fixture::new();
+    let tab = f.open();
+    f.send(Action::NavigationCommitted {
+        tab,
+        url: "https://example.com/".into(),
+    });
+    f.send(Action::SetTabZoom { tab, factor: 1.5 });
+    f.send(Action::SetTabZoom { tab, factor: 1.0 });
+
+    let later = f.open();
+    let out = f.send(Action::NavigationCommitted {
+        tab: later,
+        url: "https://example.com/elsewhere".into(),
+    });
+    assert!(
+        !out.iter()
+            .any(|c| matches!(c, EngineCommand::SetZoom { .. })),
+        "a site nobody has a size for was zoomed on arrival: {out:?}"
+    );
+}
+
+/// A Space is an identity (ADR-0007), and the size somebody reads a site at
+/// is part of reading it there: two spaces keep two answers about one origin.
+#[test]
+fn two_spaces_remember_two_zooms_for_one_site() {
+    let mut f = Fixture::new();
+    let personal = f.session.browser.active_space();
+    let work = f.add_space("Work", "ds-work");
+
+    f.send(Action::OpenTab {
+        space: Some(personal),
+        url: None,
+        parent: None,
+    });
+    let here = f.session.browser.active_tab().unwrap();
+    f.send(Action::NavigationCommitted {
+        tab: here,
+        url: "https://example.com/".into(),
+    });
+    f.send(Action::SetTabZoom {
+        tab: here,
+        factor: 1.5,
+    });
+
+    f.send(Action::OpenTab {
+        space: Some(work),
+        url: None,
+        parent: None,
+    });
+    let there = f.session.browser.active_tab().unwrap();
+    f.send(Action::NavigationCommitted {
+        tab: there,
+        url: "https://example.com/".into(),
+    });
+    f.send(Action::SetTabZoom {
+        tab: there,
+        factor: 2.0,
+    });
+
+    f.send(Action::OpenTab {
+        space: Some(personal),
+        url: None,
+        parent: None,
+    });
+    let personal_tab = f.session.browser.active_tab().unwrap();
+    let out = f.send(Action::NavigationCommitted {
+        tab: personal_tab,
+        url: "https://example.com/".into(),
+    });
+    assert!(
+        out.contains(&EngineCommand::SetZoom {
+            tab: personal_tab,
+            factor: 1.5
+        }),
+        "the work space's size reached the personal one: {out:?}"
+    );
+    assert_eq!(
+        f.session.browser.tab(personal_tab).unwrap().space,
+        personal,
+        "the tab opened in the personal space, so this is really the personal answer"
+    );
+}
+
+#[test]
+fn forgetting_a_site_zoom_resets_matching_tabs_in_display_order() {
+    let mut f = Fixture::new();
+    let personal = f.session.browser.active_space();
+    let first = on_page(&mut f, "https://example.com/first");
+    let second = on_page(&mut f, "https://example.com/second");
+    let already_default = on_page(&mut f, "https://example.com/default");
+    let other_origin = on_page(&mut f, "https://elsewhere.example/page");
+    f.send(Action::MoveTab {
+        tab: second,
+        space: personal,
+        index: 0,
+    });
+    let work = f.add_space("Work", "ds-work");
+    let work_tab = on_page(&mut f, "https://example.com/work");
+    for (tab, factor) in [
+        (first, 1.5),
+        (second, 1.5),
+        (other_origin, 1.75),
+        (work_tab, 2.0),
+    ] {
+        if let Some(tab) = f.session.browser.tab_mut(tab) {
+            tab.zoom_factor = factor;
+        }
+    }
+    f.session
+        .site_zooms
+        .set(personal, "https://example.com/first", 1.5);
+    f.session
+        .site_zooms
+        .set(personal, "https://elsewhere.example/page", 1.75);
+    f.session
+        .site_zooms
+        .set(work, "https://example.com/work", 2.0);
+
+    let out = f.send(Action::ForgetSiteZoom {
+        space: personal,
+        origin: "https://example.com".into(),
+    });
+
+    assert_eq!(
+        out,
+        vec![
+            EngineCommand::SetZoom {
+                tab: second,
+                factor: Tab::DEFAULT_ZOOM,
+            },
+            EngineCommand::SetZoom {
+                tab: first,
+                factor: Tab::DEFAULT_ZOOM,
+            },
+        ]
+    );
+    assert_eq!(
+        f.session.browser.tab(first).map(|tab| tab.zoom_factor),
+        Some(Tab::DEFAULT_ZOOM)
+    );
+    assert_eq!(
+        f.session.browser.tab(second).map(|tab| tab.zoom_factor),
+        Some(Tab::DEFAULT_ZOOM)
+    );
+    assert_eq!(
+        f.session
+            .browser
+            .tab(already_default)
+            .map(|tab| tab.zoom_factor),
+        Some(Tab::DEFAULT_ZOOM)
+    );
+    assert_eq!(
+        f.session
+            .browser
+            .tab(other_origin)
+            .map(|tab| tab.zoom_factor),
+        Some(1.75)
+    );
+    assert_eq!(
+        f.session.browser.tab(work_tab).map(|tab| tab.zoom_factor),
+        Some(2.0)
+    );
+    assert_eq!(
+        f.session
+            .site_zooms
+            .get(personal, "https://example.com/anywhere"),
+        None
+    );
+    assert_eq!(
+        f.session
+            .site_zooms
+            .get(work, "https://example.com/anywhere"),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn forgetting_a_site_zoom_refuses_invalid_or_non_canonical_origins() {
+    for origin in ["https://example.com/page", "not an origin"] {
+        let mut f = Fixture::new();
+        let space = f.session.browser.active_space();
+        f.session
+            .site_zooms
+            .set(space, "https://example.com/page", 1.5);
+
+        let out = f.send(Action::ForgetSiteZoom {
+            space,
+            origin: origin.into(),
+        });
+
+        assert!(out.is_empty(), "accepted {origin:?}");
+        assert_eq!(
+            f.session.site_zooms.get(space, "https://example.com/page"),
+            Some(1.5)
+        );
+    }
+}
+
+#[test]
+fn forgetting_a_site_zoom_for_an_unknown_space_changes_nothing() {
+    let mut f = Fixture::new();
+    let unknown = SpaceId(u64::MAX);
+    f.session
+        .site_zooms
+        .set(unknown, "https://example.com/page", 1.5);
+
+    let out = f.send(Action::ForgetSiteZoom {
+        space: unknown,
+        origin: "https://example.com".into(),
+    });
+
+    assert!(out.is_empty());
+    assert_eq!(
+        f.session
+            .site_zooms
+            .get(unknown, "https://example.com/page"),
+        Some(1.5)
+    );
+}
+
+#[test]
+fn forgetting_a_missing_site_zoom_does_not_reset_a_tab() {
+    let mut f = Fixture::new();
+    let space = f.session.browser.active_space();
+    let tab = on_page(&mut f, "https://example.com/page");
+    if let Some(tab) = f.session.browser.tab_mut(tab) {
+        tab.zoom_factor = 1.5;
+    }
+
+    let out = f.send(Action::ForgetSiteZoom {
+        space,
+        origin: "https://example.com".into(),
+    });
+
+    assert!(out.is_empty());
+    assert_eq!(
+        f.session.browser.tab(tab).map(|tab| tab.zoom_factor),
+        Some(1.5)
+    );
+}
+
 /// An air-traffic rule sends a *site* to the space that owns it. None of the
 /// browser's own addresses belongs to a space, and a pattern that happened to
 /// match our scheme would move the tab on the strength of it.
@@ -3073,12 +3360,11 @@ fn closing_the_tab_leaves_what_you_kept_alone() {
     f.send(Action::CloseTab { tab });
 
     assert_eq!(f.session.browser.tab_count(), 0);
-    assert!(
-        f.session
-            .bookmarks
-            .for_url("https://avelino.run/")
-            .is_some()
-    );
+    assert!(f
+        .session
+        .bookmarks
+        .for_url("https://avelino.run/")
+        .is_some());
 }
 
 #[test]
@@ -3606,27 +3892,21 @@ fn a_window_a_page_opened_goes_with_the_page_that_closes_itself() {
 fn a_page_asked_for_a_window_only_when_it_described_one() {
     assert!(!WindowRequest::default().asked_for_a_window());
 
-    assert!(
-        WindowRequest {
-            width: Some(480.0),
-            ..WindowRequest::default()
-        }
-        .asked_for_a_window()
-    );
-    assert!(
-        WindowRequest {
-            y: Some(80.0),
-            ..WindowRequest::default()
-        }
-        .asked_for_a_window()
-    );
-    assert!(
-        WindowRequest {
-            toolbars_visible: Some(false),
-            ..WindowRequest::default()
-        }
-        .asked_for_a_window()
-    );
+    assert!(WindowRequest {
+        width: Some(480.0),
+        ..WindowRequest::default()
+    }
+    .asked_for_a_window());
+    assert!(WindowRequest {
+        y: Some(80.0),
+        ..WindowRequest::default()
+    }
+    .asked_for_a_window());
+    assert!(WindowRequest {
+        toolbars_visible: Some(false),
+        ..WindowRequest::default()
+    }
+    .asked_for_a_window());
     assert!(
         !WindowRequest {
             toolbars_visible: Some(true),
@@ -3736,6 +4016,21 @@ fn a_row_the_target_never_earned_is_refused_even_when_it_names_an_address() {
         target: PageTarget::default(),
     });
     assert!(forward.is_empty());
+
+    // A blob names an address but earns no copy row: the fetch runs from
+    // outside the page's script context, exactly like the save it sits beside.
+    let copied = f.send(Action::ChosePageMenuItem {
+        tab,
+        item: PageMenuItem::CopyImage,
+        target: PageTarget {
+            image_url: Some("blob:https://example.com/abc".into()),
+            ..PageTarget::default()
+        },
+    });
+    assert!(
+        copied.is_empty(),
+        "a copy was started for bytes the fetch cannot reach: {copied:?}"
+    );
 }
 
 /// The lesson ADR-0075 paid for, in the one other place a tab is opened from a
@@ -3848,6 +4143,32 @@ fn saving_from_a_menu_goes_through_the_tab_it_was_asked_from() {
     assert_eq!(
         commands,
         vec![EngineCommand::StartDownload {
+            tab,
+            url: "https://example.com/a.png".into(),
+        }]
+    );
+}
+
+/// Same door, different destination: the copy names the tab for the same
+/// reason the save does — its fetch goes out over that space's cookie jar,
+/// and only the tab's own view carries it.
+#[test]
+fn copying_an_image_goes_through_the_tab_it_was_asked_from() {
+    let mut f = Fixture::new();
+    let tab = f.open();
+
+    let commands = f.send(Action::ChosePageMenuItem {
+        tab,
+        item: PageMenuItem::CopyImage,
+        target: PageTarget {
+            image_url: Some("https://example.com/a.png".into()),
+            ..PageTarget::default()
+        },
+    });
+
+    assert_eq!(
+        commands,
+        vec![EngineCommand::CopyImage {
             tab,
             url: "https://example.com/a.png".into(),
         }]
@@ -4188,10 +4509,9 @@ fn a_space_that_records_nothing_has_nowhere_to_put_an_extensions_page() {
             .any(|c| matches!(c, ViewConfiguration::Extension { .. })),
         "a private window was handed a persistent store: {out:?}"
     );
-    assert!(
-        !out.iter()
-            .any(|c| matches!(c, EngineCommand::LoadUrl { .. }))
-    );
+    assert!(!out
+        .iter()
+        .any(|c| matches!(c, EngineCommand::LoadUrl { .. })));
     // Refused as an extension's, and said so, rather than left blank.
     let after = f.session.browser.tab(tab).unwrap();
     assert_eq!(

@@ -715,6 +715,8 @@ struct PrivacySettings: View {
 
             SitePermissionsSection()
 
+            SiteZoomsSection()
+
             SavedLoginsSection()
 
             // Shipped on, because WebKit's own default here is an embedded web

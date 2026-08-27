@@ -227,6 +227,7 @@ extension PageView {
         case .saveLinkedFile: "Download Linked File"
         case .openImageInNewTab: "Open Image in New Tab"
         case .saveImage: "Download Image"
+        case .copyImage: "Copy Image"
         case .searchForSelection: searchTitle(for: target)
         case .back: "Back"
         case .forward: "Forward"
@@ -252,7 +253,7 @@ extension PageView {
     /// anybody has read a word of it, and no assertion would ever have caught
     /// it.
     ///
-    /// `nil` for the four rows that *replace* one of the engine's: those wear
+    /// `nil` for the five rows that *replace* one of the engine's: those wear
     /// the icon of the row they took the place of, which is the symbol the rest
     /// of the system already uses for that idea. See `place`.
     private static func symbol(for item: PageMenuItem) -> String? {
@@ -263,7 +264,7 @@ extension PageView {
         case .openLinkInNewTab, .openImageInNewTab: "plus.rectangle.on.rectangle"
         case .back: "chevron.backward"
         case .forward: "chevron.forward"
-        case .openLinkInNewWindow, .saveLinkedFile, .saveImage, .searchForSelection: nil
+        case .openLinkInNewWindow, .saveLinkedFile, .saveImage, .copyImage, .searchForSelection: nil
         }
     }
 
@@ -323,6 +324,10 @@ extension PageView {
         case .saveLinkedFile: .replacing("WKMenuItemIdentifierDownloadLinkedFile")
         case .openImageInNewTab: .before("WKMenuItemIdentifierOpenImageInNewWindow")
         case .saveImage: .replacing("WKMenuItemIdentifierDownloadImage")
+        // The fetch behind ours goes through the space's cookie jar and the
+        // bytes are ones this browser decoded; the engine's row answers for
+        // neither (issue #124, ADR-0091's revisit).
+        case .copyImage: .replacing("WKMenuItemIdentifierCopyImage")
         case .searchForSelection: .replacing("WKMenuItemIdentifierSearchWeb")
         // The engine's page menu is one row.
         case .back: .before("WKMenuItemIdentifierReload")

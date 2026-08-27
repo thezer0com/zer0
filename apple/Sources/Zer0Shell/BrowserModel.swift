@@ -132,6 +132,25 @@ public final class BrowserModel {
     /// and this is that value and nothing else.
     private(set) var extensionActionRevision = 0
 
+    /// Whether an extension hidden from the row is holding something for the
+    /// tab in front (ADR-0128).
+    ///
+    /// A fact about the engine's own flag, asked fresh for the same reason
+    /// nothing about an action is cached: the answer moves when the extension
+    /// moves, and a view that held it would freeze the dot. The row's
+    /// membership it is checked against is the core's, so the signal can never
+    /// fire for an extension that has a button showing its badge already.
+    var extensionWaitingOffRow: Bool {
+        _ = extensionActionRevision
+        let active = snapshot.activeTab
+        let onRow = Set(pinnedExtensions.map(\.id))
+        return installedExtensions.contains { ext in
+            ext.manifest.hasAction
+                && !onRow.contains(ext.id)
+                && extensions?.action(for: ext.id, tab: active)?.hasUnreadBadgeText == true
+        }
+    }
+
     public private(set) var snapshot: BrowserSnapshot
 
     /// Bumped once per dispatch, for the one screen the snapshot does not
@@ -155,6 +174,19 @@ public final class BrowserModel {
     /// needs *some* value to change before it will ask again, and this is that
     /// value and nothing else.
     private(set) var conversationRevision: UInt64 = 0
+
+    /// Bumped once per dispatch, for the one screen the snapshot does not
+    /// describe.
+    ///
+    /// Remembered site zooms are not in `BrowserSnapshot` — the pane that
+    /// reads them asks the core, one call at a time, and a function call is
+    /// not something the observation system can invalidate. Same pattern and
+    /// same reason as `conversationRevision` above: SwiftUI needs *some*
+    /// value to change before it will ask again, and this is that value and
+    /// nothing else. A separate counter rather than a shared one, so a pane
+    /// taking a zoom back cannot be broken by a change to how conversations
+    /// invalidate.
+    private(set) var siteZoomRevision: UInt64 = 0
 
     /// How many browser scenes the app still owes the core.
     ///
@@ -236,6 +268,23 @@ public final class BrowserModel {
         var fromEphemeralSpace: Bool
     }
 
+    /// What a finished image copy left on screen, and which copy left it.
+    ///
+    /// `nil` is no notice. The id is the generation: the timer armed when a
+    /// notice lands only clears the notice it was armed for, so a second
+    /// copy's feedback cannot be blinked off by the first one's timer — a
+    /// guarantee a comment could only hope for and a compared id makes
+    /// structural.
+    private var imageCopyNotices: [WindowId: ImageCopyNotice] = [:]
+
+    /// The fact a finished copy left, carried and not interpreted: which
+    /// sentence it earns is the view's, and how long it stays is this
+    /// model's.
+    struct ImageCopyNotice: Equatable, Identifiable {
+        let id: UUID
+        let outcome: ImageCopy.Outcome
+    }
+
     /// Find-in-page. Observable, so opening it actually shows the bar.
     let finder = PageFinder()
 
@@ -251,6 +300,7 @@ public final class BrowserModel {
     @ObservationIgnored private nonisolated(unsafe) var ticker: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var saver: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var pendingSave: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var imageCopyRetreats: [WindowId: Task<Void, Never>] = [:]
 
     /// Whether the previous run ended properly. False means it crashed or was
     /// killed, and the restored session may be slightly behind.
@@ -363,6 +413,18 @@ public final class BrowserModel {
 
         engine.emit = { [weak self] action in
             self?.send(action)
+        }
+
+        // The end of an image copy, reported by the host rather than
+        // dispatched: the clipboard is the shell's and nothing about the
+        // browser moved, so there is no Action for it — the notice it
+        // becomes is local feedback about a shell-side effect (issue #124,
+        // ADR-0091's revisit).
+        engine.imageCopyWindow = { [weak self] tab in
+            self?.snapshot.tabs.first { $0.id == tab }?.window
+        }
+        engine.imageCopyReported = { [weak self] window, outcome in
+            self?.imageCopyFinished(outcome, in: window)
         }
 
         // One of the browser's own addresses that resolves to a window rather
@@ -556,6 +618,9 @@ public final class BrowserModel {
         ticker?.cancel()
         saver?.cancel()
         pendingSave?.cancel()
+        for retreat in imageCopyRetreats.values {
+            retreat.cancel()
+        }
     }
 
     nonisolated static func defaultStoragePath() -> String {
@@ -683,7 +748,11 @@ public final class BrowserModel {
              // And an answer given to a page carries the same sentence: a
              // refusal that did not survive the crash is a refusal the site
              // gets to ask about again.
-             .decideSitePermission, .setSitePermission, .forgetSitePermission:
+             .decideSitePermission, .setSitePermission, .forgetSitePermission,
+             // A forgotten size that did not survive the crash is a size that
+             // comes back, which is the one resurrection this ledger has
+             // (ADR-0129).
+             .forgetSiteZoom:
             true
         case .titleChanged, .navigationStarted, .navigationFinished,
              .navigationFailed, .audioStateChanged, .setTabMuted, .setTabZoom,
@@ -875,6 +944,9 @@ public final class BrowserModel {
              // a site asked you for would be a leak with no API behind it.
              .sitePermissionRequested, .decideSitePermission,
              .setSitePermission, .forgetSitePermission,
+             // A remembered size is not a tab property either, and the
+             // commands that reset the pages below need no help saying so.
+             .forgetSiteZoom,
              // The same sentence for what a page *said*. `chrome.tabs` has
              // nothing for an `alert()`, and telling an extension what a site
              // wrote in one would be a disclosure with no API behind it.
@@ -937,6 +1009,9 @@ public final class BrowserModel {
             case .reload, .goBack, .goForward, .deleteDataStore, .setZoom,
                  .acceptDownload, .askDownloadDestination, .cancelDownload,
                  .startDownload, .resumeDownload, .printPage, .fetchIcon,
+                 // Copying an image leaves the page exactly as it was and
+                 // puts bytes on a pasteboard no extension is told about.
+                 .copyImage,
                  // Reading a page for a conversation changes nothing about the
                  // tab, and the rest never touch one.
                  .capturePageContext, .startChatReply, .cancelChatReply,
@@ -968,6 +1043,7 @@ public final class BrowserModel {
             bookmarks = core.bookmarks()
         }
         conversationRevision &+= 1
+        siteZoomRevision &+= 1
         // Three of the four page panels are SwiftUI sheets and are drawn from
         // this snapshot by `BrowserView`. The fourth is the system's file
         // picker, which is AppKit and has to be *put up* rather than declared —
@@ -1353,6 +1429,48 @@ public final class BrowserModel {
         } else if let tab = snapshot.activeTab {
             send(.navigateTo(tab: tab, input: bookmark.url))
         }
+    }
+
+    // MARK: - Copying an image
+
+    /// A copy of an image finished, well or badly.
+    ///
+    /// The notice replaces whatever was there — the newest outcome is the
+    /// one being waited on — and leaves on its own after `linger`. That is
+    /// the one thing `DownloadsView` refuses to let a failure do, and the
+    /// difference is earned rather than excepted: a failed download carries
+    /// an action this notice does not, and the thing to do about a copy that
+    /// did not land is to choose the row again, which no notice was holding
+    /// open.
+    private func imageCopyFinished(_ outcome: ImageCopy.Outcome, in window: WindowId) {
+        let notice = ImageCopyNotice(id: UUID(), outcome: outcome)
+        imageCopyNotices[window] = notice
+        // The previous timer is cancelled and the new one carries this
+        // notice's id; the guard below is what makes the pair a guarantee
+        // rather than a hope, because a timer that already raced past its
+        // cancellation still has to name its own notice to do anything.
+        imageCopyRetreats[window]?.cancel()
+        imageCopyRetreats[window] = Task { [weak self, id = notice.id] in
+            try? await Task.sleep(for: .seconds(Design.Duration.linger))
+            guard !Task.isCancelled else { return }
+            self?.retreatImageCopyNotice(in: window, ifItIs: id)
+        }
+    }
+
+    func imageCopyNotice(in window: WindowId?) -> ImageCopyNotice? {
+        window.flatMap { imageCopyNotices[$0] }
+    }
+
+    /// Take the notice down, but only if it is still the one asked about.
+    ///
+    /// Internal rather than private so the suite can hold the guard to its
+    /// rule directly: the alternative is a test that sleeps past two live
+    /// timers and proves only that the notice went away — whichever timer
+    /// took it.
+    func retreatImageCopyNotice(in window: WindowId, ifItIs id: UUID) {
+        guard imageCopyNotices[window]?.id == id else { return }
+        imageCopyNotices.removeValue(forKey: window)
+        imageCopyRetreats.removeValue(forKey: window)?.cancel()
     }
 
     // MARK: - Tabs
@@ -2278,6 +2396,13 @@ public final class BrowserModel {
     /// Right-clicking a button and choosing Hide lands here, and so does the
     /// switch in Settings. One path, so the two cannot drift.
     func setExtensionPinned(_ id: String, _ pinned: Bool) {
+        if pinned, let active = snapshot.activeTab {
+            // The badge is presented from this moment, and the engine's
+            // contract makes clearing its unread flag the app's job. Without
+            // this, pin-see-unpin draws a dot for a badge the person already
+            // read (ADR-0128).
+            extensions?.action(for: id, tab: active)?.hasUnreadBadgeText = false
+        }
         core.setExtensionPinned(id: id, pinned: pinned)
         pinnedExtensions = core.pinnedExtensions()
         scheduleSave()
@@ -3002,6 +3127,30 @@ public final class BrowserModel {
             origin: grant.origin,
             capability: grant.capability
         ))
+    }
+
+    // MARK: - What a site is drawn at
+
+    /// Every size remembered for a site, for the pane that takes them back.
+    ///
+    /// Read straight from the core on every draw for the reason `siteGrants`
+    /// is: a copy kept here would be a second answer to a question the core
+    /// already answers. The revision is read first so a dispatch invalidates
+    /// the pane — a function call is not something the observation system can
+    /// see, and this is the value that changes underneath it.
+    var siteZooms: [StoredZoom] {
+        _ = siteZoomRevision
+        return core.siteZooms()
+    }
+
+    /// Take one remembered size back, so the site opens at the ordinary one.
+    ///
+    /// Through `send`, so every open tab on that origin comes back to the
+    /// ordinary size through the same commands ⌘0 issues from the page — a
+    /// shell-side reset would move the pages and leave every screen saying
+    /// they had not moved.
+    func forgetSiteZoom(_ zoom: StoredZoom) {
+        send(.forgetSiteZoom(space: zoom.space, origin: zoom.origin))
     }
 
     // MARK: - What a page said to you

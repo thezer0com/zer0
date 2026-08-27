@@ -1174,6 +1174,95 @@ struct ExtensionPinTests {
     }
 }
 
+/// The unread signal for an extension hidden from the row (ADR-0128).
+///
+/// Claim versus silence, at the one door the row reads: the model's flag, not
+/// a rendered view. Where the dot sits is look; whether it may say anything at
+/// all is behaviour, and this is the fence on the behaviour.
+@MainActor
+struct ExtensionUnreadTests {
+    private func profile() -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zer0-unread-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private func model(in profile: URL) -> BrowserModel {
+        let m = BrowserModel(
+            storagePath: profile.appendingPathComponent("session.sqlite").path
+        )
+        m.loadInstalledExtensions()
+        return m
+    }
+
+    private func extensionsDirectory(in profile: URL) -> URL {
+        let dir = profile.appendingPathComponent("extensions")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @Test("a hidden extension says so on the row, and pinning it clears the claim")
+    func anExtensionHiddenFromTheRowSaysSoAndPinningClearsIt() async throws {
+        let profile = profile()
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let dir = extensionsDirectory(in: profile)
+
+        // Both extensions light their own badge from a real background worker,
+        // which is the only route that sets the engine's unread flag for real:
+        // the header says it is set "when badgeText changes and is not empty",
+        // and writing the flag by hand does not take.
+        let hidden = try ExtensionFixture(
+            id: String(repeating: "a", count: 32),
+            backgroundScript: "chrome.action.setBadgeText({ text: '3' });",
+            in: dir
+        )
+        let visible = try ExtensionFixture(
+            id: String(repeating: "b", count: 32),
+            backgroundScript: "chrome.action.setBadgeText({ text: '4' });",
+            in: dir
+        )
+
+        let m = model(in: profile)
+        let host = try #require(m.extensions)
+        let active = try #require(m.snapshot.activeTab)
+
+        func badge(_ fixture: ExtensionFixture, reads text: String) async -> Bool {
+            await eventually {
+                host.action(for: fixture.installed.id, tab: active)?.badgeText == text
+            }
+        }
+
+        // One extension, running and pinned. Its badge arrives — the engine's
+        // unread flag goes with it — and the signal stays silent, because a
+        // badge on a button that is on screen is already presented and a
+        // second mark beside it would be the row saying one thing twice.
+        var decision = visible.everything
+        decision.extensionId = visible.installed.id
+        await m.applyConsent(decision)
+        #expect(m.pinnedExtensions.map(\.id) == [visible.installed.id])
+        #expect(await badge(visible, reads: "4"))
+        #expect(!m.extensionWaitingOffRow)
+
+        // Now the second one runs, is taken off the row, and its badge arrives.
+        // The claim appears with it — nothing cached in between.
+        decision = hidden.everything
+        decision.extensionId = hidden.installed.id
+        await m.applyConsent(decision)
+        m.setExtensionPinned(hidden.installed.id, false)
+        #expect(m.pinnedExtensions.map(\.id) == [visible.installed.id])
+        #expect(await badge(hidden, reads: "3"))
+        #expect(m.extensionWaitingOffRow)
+
+        // Pinning is presenting: the app clears the flag by its own hand —
+        // the engine's contract makes that ours — and the claim is gone.
+        let hiddenAction = try #require(host.action(for: hidden.installed.id, tab: active))
+        m.setExtensionPinned(hidden.installed.id, true)
+        #expect(hiddenAction.hasUnreadBadgeText == false)
+        #expect(!m.extensionWaitingOffRow)
+    }
+}
+
 /// What an extension's own popup can say, and who it is said to be (ADR-0098).
 ///
 /// **These drive the popup WebKit built, not one of ours.**

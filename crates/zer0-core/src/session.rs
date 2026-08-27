@@ -24,6 +24,7 @@ use crate::protocol::HostCapabilities;
 use crate::routing::RoutingTable;
 use crate::shortcuts::{Keymap, UiCommand};
 use crate::site_permissions::SitePermissions;
+use crate::site_zoom::SiteZooms;
 
 /// Enough of a closed tab to bring it back.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +107,12 @@ pub struct Session {
     /// lived on that side would be re-asked on every launch — and this one is
     /// re-asked by a *page*, at a moment the page picks. See ADR-0056.
     pub site_permissions: SitePermissions,
+    /// The zoom each site is read at, per space (ADR-0129).
+    ///
+    /// Beside the tabs rather than on them for the reason the permissions
+    /// below are: a remembered size outlives every tab that chose it, and it
+    /// is asked about by a commit, which is a moment and not a tab.
+    pub site_zooms: SiteZooms,
     /// What pages have said to you and are waiting to hear back about:
     /// `alert()`, `confirm()`, `prompt()` and the file picker.
     ///
@@ -215,6 +222,7 @@ impl Session {
             chat: Chat::new(),
             mcp: McpRegistry::new(),
             site_permissions: SitePermissions::new(),
+            site_zooms: SiteZooms::default(),
             page_dialogs: PageDialogs::new(),
             http_auth: HttpAuth::new(),
             trust_exceptions: TrustExceptions::new(),

@@ -207,6 +207,7 @@ struct PageMenuTests {
         for identifier in [
             "WKMenuItemIdentifierOpenImageInNewWindow",
             "WKMenuItemIdentifierDownloadImage",
+            "WKMenuItemIdentifierCopyImage",
         ] {
             #expect(
                 index(of: identifier, in: harness.view.engineMenu) != nil,
@@ -302,6 +303,10 @@ struct PageMenuTests {
         try await rightClick("img", in: harness)
         #expect(index(of: "WKMenuItemIdentifierDownloadImage", in: harness.view.amendedMenu) == nil)
         #expect(index(ofTitle: "Download Image", in: harness.view.amendedMenu) != nil)
+        // Same shape: ours is the row whose fetch goes through the space's
+        // jar, so the engine's copy must not survive beside it.
+        #expect(index(of: "WKMenuItemIdentifierCopyImage", in: harness.view.amendedMenu) == nil)
+        #expect(index(ofTitle: "Copy Image", in: harness.view.amendedMenu) != nil)
     }
 
     /// ADR-0054, reached from the one direction a menu opens. The navigation

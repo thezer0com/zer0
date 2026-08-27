@@ -72,6 +72,12 @@ pub enum PageMenuItem {
     OpenImageInNewTab,
     /// Replaces the engine's "Download Image", measured to reach nothing.
     SaveImage,
+    /// Replaces the engine's "Copy Image" with one whose whole path this
+    /// browser owns: the host fetches the bytes through the tab's own cookie
+    /// jar — an image behind a login is exactly the image a person copies —
+    /// and puts decoded image data on the pasteboard. ADR-0027's machinery,
+    /// pointed at the pasteboard instead of the disk.
+    CopyImage,
     /// Replaces the engine's "Search with Google", which names an engine
     /// Settings may not be using. The search is spelled once, in
     /// [`crate::url_input`], where the command bar spells it.
@@ -107,6 +113,7 @@ pub fn additions_for(target: &PageTarget) -> Vec<PageMenuItem> {
         out.push(PageMenuItem::OpenImageInNewTab);
         if downloadable(image) {
             out.push(PageMenuItem::SaveImage);
+            out.push(PageMenuItem::CopyImage);
         }
     }
 
@@ -137,7 +144,7 @@ pub fn address_for(item: PageMenuItem, target: &PageTarget) -> Option<String> {
         PageMenuItem::OpenLinkInNewTab
         | PageMenuItem::OpenLinkInNewWindow
         | PageMenuItem::SaveLinkedFile => openable(target.link_url.as_deref()).map(str::to_string),
-        PageMenuItem::OpenImageInNewTab | PageMenuItem::SaveImage => {
+        PageMenuItem::OpenImageInNewTab | PageMenuItem::SaveImage | PageMenuItem::CopyImage => {
             openable(target.image_url.as_deref()).map(str::to_string)
         }
         PageMenuItem::SearchForSelection | PageMenuItem::Back | PageMenuItem::Forward => None,
@@ -175,12 +182,14 @@ fn openable(url: Option<&str>) -> Option<&str> {
     Some(url)
 }
 
-/// Whether the download machinery can fetch this address.
+/// Whether the fetch machinery can carry this address — the download's and
+/// the copy's, which share one limit because they share one reason.
 ///
 /// `blob:` is deliberately out. A blob URL names an object inside one page's
-/// script context, and the download runs from outside it — so the row would be
-/// an offer to save a file that cannot be fetched, which is exactly the shape
-/// ADR-0018 refuses. `data:` stays in: the bytes are in the address itself.
+/// script context, and both a download and a copy fetch run from outside it
+/// — so the row would be an offer to fetch bytes that cannot be fetched,
+/// which is exactly the shape ADR-0018 refuses. `data:` stays in: the bytes
+/// are in the address itself.
 fn downloadable(url: &str) -> bool {
     let Some((scheme, _)) = url.split_once(':') else {
         return false;
@@ -241,10 +250,14 @@ mod tests {
     }
 
     #[test]
-    fn an_image_can_be_opened_in_a_tab_and_saved() {
+    fn an_image_can_be_opened_in_a_tab_saved_and_copied() {
         assert_eq!(
             additions_for(&on_an_image("https://example.com/a.png")),
-            vec![PageMenuItem::OpenImageInNewTab, PageMenuItem::SaveImage]
+            vec![
+                PageMenuItem::OpenImageInNewTab,
+                PageMenuItem::SaveImage,
+                PageMenuItem::CopyImage,
+            ]
         );
     }
 
@@ -312,10 +325,10 @@ mod tests {
         }
     }
 
-    /// A row offering to save something that cannot be fetched is the same
+    /// A row offering to fetch something that cannot be fetched is the same
     /// claim as a progress bar over an unknown length.
     #[test]
-    fn a_blob_can_be_opened_and_not_saved() {
+    fn a_blob_can_be_opened_but_not_saved_or_copied() {
         assert_eq!(
             additions_for(&on_an_image("blob:https://example.com/abc")),
             vec![PageMenuItem::OpenImageInNewTab]
@@ -330,10 +343,14 @@ mod tests {
     }
 
     #[test]
-    fn a_data_image_can_be_saved_because_the_bytes_are_the_address() {
+    fn a_data_image_can_be_saved_and_copied_because_the_bytes_are_the_address() {
         assert_eq!(
             additions_for(&on_an_image("data:image/gif;base64,R0lGOD")),
-            vec![PageMenuItem::OpenImageInNewTab, PageMenuItem::SaveImage]
+            vec![
+                PageMenuItem::OpenImageInNewTab,
+                PageMenuItem::SaveImage,
+                PageMenuItem::CopyImage,
+            ]
         );
     }
 
@@ -375,6 +392,7 @@ mod tests {
                 PageMenuItem::SaveLinkedFile,
                 PageMenuItem::OpenImageInNewTab,
                 PageMenuItem::SaveImage,
+                PageMenuItem::CopyImage,
                 PageMenuItem::Back,
             ]
         );

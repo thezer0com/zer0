@@ -26,6 +26,11 @@ struct LucideIconTests {
         .check: (1, CGRect(x: 4, y: 6, width: 16, height: 11)),
         // Two diagonals inside the 6..18 square.
         .x: (2, CGRect(x: 6, y: 6, width: 12, height: 12)),
+        // A ring at (12, 12), r 10 — so 2..22 — plus a dash across the middle.
+        .minusCircle: (2, CGRect(x: 2, y: 2, width: 20, height: 20)),
+        // The lens 3..19 with its handle reaching to (21, 21); the plus only
+        // reaches 8..14, so it never widens the box.
+        .zoomIn: (4, CGRect(x: 3, y: 3, width: 18, height: 18)),
     ]
 
     @Test("every icon carries vouched geometry")
@@ -99,6 +104,28 @@ struct LucideIconTests {
         #expect(inside(CGPoint(x: 11, y: 11), of: search))
         #expect(!inside(CGPoint(x: 11, y: 20), of: search))
         #expect(subpathStarts(of: search).last == CGPoint(x: 21, y: 21))
+
+        // The removal is a ring with one horizontal dash through the ring's
+        // own centre — not a corner, not a tick, and not a dash that misses.
+        // `vertices` rather than `lineCentres`: the ring is curves, and a
+        // closed curve start==end point would record a centre of its own.
+        let minusCircle = LucideIcon.minusCircle.drawing
+        #expect(inside(CGPoint(x: 12, y: 12), of: minusCircle))
+        let dash = vertices(of: minusCircle)
+        #expect(dash.contains { near($0, CGPoint(x: 8, y: 12)) })
+        #expect(dash.contains { near($0, CGPoint(x: 16, y: 12)) })
+
+        // The zoom is the search's lens and handle with a plus whose four
+        // arm-ends sit either side of the lens's centre.
+        let zoomIn = LucideIcon.zoomIn.drawing
+        #expect(inside(CGPoint(x: 11, y: 11), of: zoomIn))
+        #expect(!inside(CGPoint(x: 11, y: 20), of: zoomIn))
+        let arms = vertices(of: zoomIn)
+        for armEnd in [CGPoint(x: 11, y: 8), CGPoint(x: 11, y: 14),
+                       CGPoint(x: 8, y: 11), CGPoint(x: 14, y: 11)] {
+            #expect(arms.contains { near($0, armEnd) }, "\(armEnd)")
+        }
+        #expect(arms.contains { near($0, CGPoint(x: 21, y: 21)) })
     }
 
     @Test("drawn in a box, the drawing fits the box")

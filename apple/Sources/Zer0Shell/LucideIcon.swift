@@ -26,6 +26,16 @@ enum LucideIcon: CaseIterable {
     case check
     case x
 
+    /// A removal: a ring with a dash through it. The forget control on the
+    /// remembered-zoom rows, standing in for the `minus.circle` SF Symbol the
+    /// permissions rows wear — new symbols are budgeted out (ADR-0116), so a
+    /// new control glyph lands here.
+    case minusCircle
+
+    /// The page made larger: the lens with a plus in it. The remembered-zoom
+    /// list's empty state, where it says "zoom" at a glance.
+    case zoomIn
+
     /// The grid every icon in the set is drawn on. All coordinates in
     /// ``drawing`` are in these units, so each port reads side by side with
     /// the SVG file it came from.
@@ -77,6 +87,26 @@ enum LucideIcon: CaseIterable {
             // <path d="m6 6 12 12"/>
             path.move(to: CGPoint(x: 6, y: 6))
             path.addLine(to: CGPoint(x: 18, y: 18))
+
+        case .minusCircle:
+            // <circle cx="12" cy="12" r="10"/>
+            path.addEllipse(in: CGRect(x: 2, y: 2, width: 20, height: 20))
+            // <path d="M8 12h8"/>
+            path.move(to: CGPoint(x: 8, y: 12))
+            path.addLine(to: CGPoint(x: 16, y: 12))
+
+        case .zoomIn:
+            // <circle cx="11" cy="11" r="8"/>
+            path.addEllipse(in: CGRect(x: 3, y: 3, width: 16, height: 16))
+            // <path d="m21 21-4.3-4.3"/>
+            path.move(to: CGPoint(x: 21, y: 21))
+            path.addLine(to: CGPoint(x: 16.7, y: 16.7))
+            // <path d="M11 8v6"/>
+            path.move(to: CGPoint(x: 11, y: 8))
+            path.addLine(to: CGPoint(x: 11, y: 14))
+            // <path d="M8 11h6"/>
+            path.move(to: CGPoint(x: 8, y: 11))
+            path.addLine(to: CGPoint(x: 14, y: 11))
         }
         return path
     }

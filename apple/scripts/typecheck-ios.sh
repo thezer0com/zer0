@@ -39,6 +39,7 @@ SHARED=(
 	ExtensionHost
 	ExtensionPopupDialogs
 	ExternalScheme
+	ImageCopy
 	LucideIcon
 	McpHost
 	McpHttpLink

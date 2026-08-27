@@ -1,7 +1,7 @@
 use super::*;
 use crate::extension_permissions::consent_request;
 use crate::model::NavigationErrorKind;
-use crate::protocol::{Action, WindowContents};
+use crate::protocol::{Action, EngineCommand, WindowContents};
 use crate::reducer::dispatch;
 use crate::shortcuts::{Chord, UiCommand};
 use crate::site_permissions::{SiteCapability, SiteVerdict};
@@ -76,6 +76,34 @@ fn round_trip(session: &Session) -> Session {
     let mut store = Store::in_memory().unwrap();
     store.save(&StorableSession::project(session)).unwrap();
     store.load().unwrap().expect("a saved session must load")
+}
+
+/// A real file on disk, removed when the test is done. The zoom adoption is
+/// decided by the version an existing file carried when it was *opened*, so
+/// a test that cares about it needs the real lifecycle — save, close, reopen
+/// — rather than one in-memory handle, which is always a brand-new file.
+struct TempStore {
+    path: std::path::PathBuf,
+}
+
+impl TempStore {
+    fn new() -> Self {
+        let path = crate::test_support::scratch_path("store-test.sqlite");
+        Self { path }
+    }
+
+    fn open(&self) -> Store {
+        Store::open(&self.path).unwrap()
+    }
+}
+
+impl Drop for TempStore {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        // WAL sidecars too, or every test leaves two more files in /tmp.
+        let _ = std::fs::remove_file(self.path.with_extension("sqlite-wal"));
+        let _ = std::fs::remove_file(self.path.with_extension("sqlite-shm"));
+    }
 }
 
 #[test]
@@ -679,12 +707,10 @@ fn an_answer_about_starting_a_program_survives_a_relaunch() {
     assert!(!refused.allowed);
 
     // And nothing was invented about a program nobody was asked about.
-    assert!(
-        after
-            .native_hosts
-            .decision("aeblfdkhhhdcdjpifhhbdiojplfjncoa", "/bin/sh")
-            .is_none()
-    );
+    assert!(after
+        .native_hosts
+        .decision("aeblfdkhhhdcdjpifhhbdiojplfjncoa", "/bin/sh")
+        .is_none());
 }
 
 #[test]
@@ -1115,15 +1141,13 @@ fn clearing_history_actually_clears_it() {
         .record("https://embarrassing.example/", None, 100);
     let mut store = Store::in_memory().unwrap();
     store.save(&StorableSession::project(&before)).unwrap();
-    assert!(
-        store
-            .load()
-            .unwrap()
-            .unwrap()
-            .history
-            .get("https://embarrassing.example/")
-            .is_some()
-    );
+    assert!(store
+        .load()
+        .unwrap()
+        .unwrap()
+        .history
+        .get("https://embarrassing.example/")
+        .is_some());
 
     before.history.clear();
     store.save(&StorableSession::project(&before)).unwrap();
@@ -1546,4 +1570,277 @@ fn a_private_window_is_not_on_disk_after_a_save() {
             .all(|t| t.url.as_deref() != Some("https://secret.example/")),
         "the page came back"
     );
+}
+
+// --- site zooms (ADR-0129) ---------------------------------------------------
+
+/// The whole point of the ledger: a size somebody chose for a site is still
+/// the site's size next week.
+#[test]
+fn a_sites_zoom_survives_a_relaunch() {
+    let mut s = Session::new("Personal", "ds-personal");
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: None,
+            url: None,
+            parent: None,
+        },
+    );
+    let tab = s.browser.active_tab().unwrap();
+    dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab,
+            url: "https://example.com/".into(),
+        },
+    );
+    dispatch(&mut s, Action::SetTabZoom { tab, factor: 1.5 });
+
+    let after = round_trip(&s);
+    let space = after.browser.tab(tab).map(|t| t.space).unwrap();
+
+    assert_eq!(
+        after.site_zooms.get(space, "https://example.com/anywhere"),
+        Some(1.5),
+        "the zoom did not survive as the site's"
+    );
+    assert_eq!(
+        after.browser.tab(tab).unwrap().zoom_factor,
+        1.5,
+        "the restored tab was not drawn at the site's zoom"
+    );
+}
+
+/// A file written before ADR-0129 carries zooms on the tabs and nothing in
+/// the ledger. The first launch after must adopt them — one time, first tab
+/// wins — or every zoom the person ever set dies with the upgrade.
+///
+/// The zoom below is set on the model rather than through `SetTabZoom`, which
+/// is what makes this an old file: the new write-through would have filled
+/// the ledger on the way. The version is stamped down to 13 before the
+/// reopen, because those are the bytes a pre-ledger build left behind, and
+/// the version at open is what the adoption is gated on.
+#[test]
+fn an_old_sessions_tab_zooms_seed_the_ledger() {
+    let mut s = Session::new("Personal", "ds-personal");
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: None,
+            url: None,
+            parent: None,
+        },
+    );
+    let tab = s.browser.active_tab().unwrap();
+    dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab,
+            url: "https://example.com/".into(),
+        },
+    );
+    s.browser.tab_mut(tab).unwrap().zoom_factor = 1.6;
+    assert!(
+        s.site_zooms.all().is_empty(),
+        "the fixture must look like an old build: nothing in the ledger"
+    );
+
+    let file = TempStore::new();
+    {
+        let mut store = file.open();
+        store.save(&StorableSession::project(&s)).unwrap();
+        store.conn.pragma_update(None, "user_version", 13).unwrap();
+    }
+
+    let after = file.open().load().unwrap().expect("must load");
+    let space = after.browser.tab(tab).map(|t| t.space).unwrap();
+    assert_eq!(
+        after.site_zooms.get(space, "https://example.com/"),
+        Some(1.6),
+        "yesterday's per-tab zoom never became the site's"
+    );
+    assert_eq!(after.browser.tab(tab).unwrap().zoom_factor, 1.6);
+}
+
+/// The resurrection the adoption gate exists to prevent. Two tabs on one
+/// origin, the zoom reset on one of them: the reset removes the ledger row,
+/// but the sibling tab still carries the old size, and an adoption that ran
+/// on every launch would read that sibling as a pre-ledger leftover and put
+/// the reset zoom back. Only a file from before the ledger existed may seed.
+#[test]
+fn a_reset_zoom_is_not_resurrected_by_a_sibling_tab() {
+    let mut s = Session::new("Personal", "ds-personal");
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: None,
+            url: None,
+            parent: None,
+        },
+    );
+    let first = s.browser.active_tab().unwrap();
+    dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab: first,
+            url: "https://example.com/".into(),
+        },
+    );
+    dispatch(
+        &mut s,
+        Action::SetTabZoom {
+            tab: first,
+            factor: 1.5,
+        },
+    );
+
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: None,
+            url: None,
+            parent: None,
+        },
+    );
+    let sibling = s.browser.active_tab().unwrap();
+    dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab: sibling,
+            url: "https://example.com/".into(),
+        },
+    );
+    // The reset: the ledger row goes, the resetting tab comes back to the
+    // ordinary size, and the sibling keeps what its view is drawn at until
+    // it navigates.
+    dispatch(
+        &mut s,
+        Action::SetTabZoom {
+            tab: first,
+            factor: 1.0,
+        },
+    );
+    let space = s.browser.tab(first).unwrap().space;
+    assert_eq!(s.site_zooms.get(space, "https://example.com/"), None);
+
+    // A current-shape file: saved after the reset by this build, reopened by
+    // this build, so nothing may be seeded from the sibling.
+    let file = TempStore::new();
+    {
+        let mut store = file.open();
+        store.save(&StorableSession::project(&s)).unwrap();
+    }
+    let after = file.open().load().unwrap().expect("must load");
+
+    assert_eq!(
+        after.site_zooms.get(space, "https://example.com/"),
+        None,
+        "the reset zoom came back from a sibling tab the person never reset"
+    );
+    assert_eq!(
+        after.browser.tab(first).unwrap().zoom_factor,
+        1.0,
+        "the resetting tab was drawn back at the size it left"
+    );
+}
+
+/// An ephemeral space keeps its zoom for the session and writes none of it
+/// down (ADR-0023) — the projection is the guarantee, not a convention the
+/// backend was asked to remember.
+#[test]
+fn an_ephemeral_space_writes_no_zooms_down() {
+    let mut s = Session::new("Personal", "ds-personal");
+    dispatch(
+        &mut s,
+        Action::CreateSpace {
+            name: "Private".into(),
+            data_store_id: "ds-private".into(),
+            ephemeral: true,
+        },
+    );
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: None,
+            url: None,
+            parent: None,
+        },
+    );
+    let tab = s.browser.active_tab().unwrap();
+    let space = s.browser.tab(tab).unwrap().space;
+    dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab,
+            url: "https://example.com/".into(),
+        },
+    );
+    dispatch(&mut s, Action::SetTabZoom { tab, factor: 1.5 });
+
+    // Still the answer within the session: another tab arriving on the site
+    // in that space is drawn at it.
+    dispatch(
+        &mut s,
+        Action::OpenTab {
+            space: Some(space),
+            url: None,
+            parent: None,
+        },
+    );
+    let second = s.browser.active_tab().unwrap();
+    let out = dispatch(
+        &mut s,
+        Action::NavigationCommitted {
+            tab: second,
+            url: "https://example.com/".into(),
+        },
+    );
+    assert!(out.contains(&EngineCommand::SetZoom {
+        tab: second,
+        factor: 1.5
+    }));
+
+    let storable = StorableSession::project(&s);
+    assert!(
+        storable.site_zooms.iter().all(|z| z.space != space),
+        "a space that promised to leave nothing behind wrote a zoom down"
+    );
+}
+
+/// A file is hostile until proven otherwise (ADR-0024): a factor no keystroke
+/// could have set — NaN survives no clamp, and the bounds are the bounds — is
+/// dropped rather than repaired into something the person never chose.
+#[test]
+fn a_factor_no_keystroke_could_have_set_is_refused() {
+    use crate::site_zoom::{SiteZooms, StoredZoom};
+
+    let space = SpaceId(1);
+    let zooms = SiteZooms::load(vec![
+        StoredZoom {
+            space,
+            origin: "https://a.example/".into(),
+            factor: f64::NAN,
+        },
+        StoredZoom {
+            space,
+            origin: "https://b.example/".into(),
+            factor: 9.0,
+        },
+        StoredZoom {
+            space,
+            origin: "".into(),
+            factor: 1.25,
+        },
+        StoredZoom {
+            space,
+            origin: "https://c.example".into(),
+            factor: 1.25,
+        },
+    ]);
+
+    assert_eq!(zooms.get(space, "https://a.example/"), None);
+    assert_eq!(zooms.get(space, "https://b.example/"), None);
+    assert_eq!(zooms.get(space, ""), None);
+    assert_eq!(zooms.get(space, "https://c.example/"), Some(1.25));
 }

@@ -40,6 +40,7 @@ use crate::session::Session;
 use crate::session_store::SessionStore;
 use crate::shortcuts::{Binding, Chord, Key, Keymap, Modifiers, UiCommand};
 use crate::site_permissions::{SiteCapability, SiteGrant, SitePermissions};
+use crate::site_zoom::{SiteZooms, StoredZoom};
 use crate::storable::{
     StorableDownloadState, StorableMessage, StorableMessageState, StorableSession,
 };
@@ -66,14 +67,16 @@ impl From<rusqlite::Error> for StoreError {
 /// `tool_consent`, 6 added `tool_shapes`, 7 added `conversation_pages`, 8 added
 /// `bookmarks` and `bookmark_tags`, 9 added `site_permissions`, 10 added
 /// `windows` and `tab_windows`, 11 added `extension_pins`, 12 added
-/// `tab_navigation_states`, 13 added `native_host_consent`.
+/// `tab_navigation_states`, 13 added `native_host_consent`, 14 added
+/// `site_zooms`.
 ///
-/// Written to `user_version` on open and never read back, which is the honest
-/// state of things: there is no migration step, so nothing branches on it. It
-/// is here so that a person — or a future migration that finally needs one —
-/// can tell which shape a file on disk was written by. That is worth a line,
-/// and pretending it does more than that would not be.
-const SCHEMA_VERSION: i64 = 13;
+/// Written to `user_version` on open, and read back for exactly one thing:
+/// the zoom adoption in `load` runs only over a file written before schema 14
+/// (ADR-0129). There is still no migration step and nothing else branches on
+/// it. Beyond that one read, it is here so that a person — or a future
+/// migration that finally needs one — can tell which shape a file on disk was
+/// written by.
+const SCHEMA_VERSION: i64 = 14;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (
@@ -342,6 +345,16 @@ CREATE TABLE IF NOT EXISTS site_permissions (
     decided_at_ms INTEGER NOT NULL,
     PRIMARY KEY (space_id, origin, capability)
 );
+-- The zoom each origin is read at, per space (ADR-0129). A table of its own
+-- for the same reason `site_permissions` is one: a column added to `spaces`
+-- or `tabs` never appears on a database that already exists, and a read that
+-- fails on it costs the whole session (ADR-0017).
+CREATE TABLE IF NOT EXISTS site_zooms (
+    space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    origin   TEXT    NOT NULL,
+    factor   REAL    NOT NULL,
+    PRIMARY KEY (space_id, origin)
+);
 CREATE INDEX IF NOT EXISTS tabs_by_space ON tabs(space_id, position);
 CREATE INDEX IF NOT EXISTS chat_by_conversation ON chat_messages(conversation_id, position);
 CREATE INDEX IF NOT EXISTS history_by_visit ON history(last_visit_ms DESC);
@@ -372,6 +385,12 @@ enum PermissionPass {
 
 pub struct Store {
     conn: Connection,
+    /// The `user_version` the file carried when it was opened, read before
+    /// the schema write replaced it. It says which build wrote the file,
+    /// which is the only honest way to tell "a session from before the zoom
+    /// ledger existed" from "a session whose ledger is empty because the
+    /// person reset the zoom" (ADR-0129).
+    file_schema_version: i64,
 }
 
 impl Store {
@@ -381,17 +400,26 @@ impl Store {
 
     /// For tests, and for a browser told never to touch the disk.
     pub fn in_memory() -> Result<Self> {
-        Self::prepare(Connection::open_in_memory()?)
+        let mut store = Self::prepare(Connection::open_in_memory()?)?;
+        store.file_schema_version = SCHEMA_VERSION;
+        Ok(store)
     }
 
     fn prepare(conn: Connection) -> Result<Self> {
+        // Read before the schema write below replaces it: after that, the
+        // number says this build, and the one it replaced is gone.
+        let file_schema_version =
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))?;
         // WAL keeps a save from blocking reads, and matters the moment saving
         // happens on a timer while the UI is live.
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            file_schema_version,
+        })
     }
 }
 
@@ -437,6 +465,7 @@ impl SessionStore for Store {
         // The tag rows cascade off their bookmark, so deleting this is enough.
         tx.execute("DELETE FROM bookmarks", [])?;
         tx.execute("DELETE FROM site_permissions", [])?;
+        tx.execute("DELETE FROM site_zooms", [])?;
 
         for (position, space) in session.spaces.iter().enumerate() {
             tx.execute(
@@ -607,6 +636,14 @@ impl SessionStore for Store {
                     grant.allowed as i64,
                     grant.decided_at_ms as i64,
                 ],
+            )?;
+        }
+
+        for zoom in &session.site_zooms {
+            tx.execute(
+                "INSERT OR REPLACE INTO site_zooms (space_id, origin, factor)
+                 VALUES (?1, ?2, ?3)",
+                params![zoom.space.0 as i64, zoom.origin, zoom.factor],
             )?;
         }
 
@@ -873,6 +910,17 @@ impl SessionStore for Store {
         let existing: Vec<SpaceId> = browser.spaces().iter().map(|s| s.id).collect();
         routes.retain_spaces(&existing);
 
+        // The ledger first, then the adoption of what an older build left on
+        // the tabs themselves. Gated on the file's version rather than run
+        // every launch: adoption reads a missing row as "the old build never
+        // wrote one", and a person's ⌘0 also leaves a missing row — the two
+        // are indistinguishable from the tabs alone, so only a file that
+        // predates schema 14 is allowed to seed (ADR-0129).
+        let mut site_zooms = SiteZooms::load(self.load_site_zooms()?);
+        if self.file_schema_version < SCHEMA_VERSION {
+            site_zooms.adopt(&mut browser);
+        }
+
         Ok(Some(Session {
             browser,
             history: History::load(self.load_history()?),
@@ -885,6 +933,7 @@ impl SessionStore for Store {
             extension_pins: ExtensionPins::load(self.load_extension_pins()?),
             native_hosts: NativeHostLedger::load(self.load_native_host_consent()?),
             site_permissions: SitePermissions::load(self.load_site_permissions()?),
+            site_zooms,
             // Icons live in a file of their own (ADR-0044) and are loaded over
             // the top of this by whoever opened both.
             icons: Icons::new(),
@@ -1158,6 +1207,22 @@ impl Store {
             });
         }
         Ok(grants)
+    }
+
+    fn load_site_zooms(&self) -> Result<Vec<StoredZoom>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT space_id, origin, factor FROM site_zooms")?;
+        let zooms = stmt
+            .query_map([], |row| {
+                Ok(StoredZoom {
+                    space: SpaceId(row.get::<_, i64>(0)?.max(0) as u64),
+                    origin: row.get(1)?,
+                    factor: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(zooms)
     }
 
     fn load_bookmarks(&self) -> Result<Vec<Bookmark>> {

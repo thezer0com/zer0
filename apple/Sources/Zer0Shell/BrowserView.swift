@@ -1,3 +1,4 @@
+import Accessibility
 import SwiftUI
 import WebKit
 import Zer0Core
@@ -241,6 +242,7 @@ public struct BrowserView: View {
             content
         }
         .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .bottomLeading) { imageCopyNotice }
     }
 
     /// One page, or two side by side.
@@ -308,6 +310,95 @@ public struct BrowserView: View {
             .padding(.top, model.sidebarVisible ? Design.Space.regular : WindowChrome.height + 8)
             .arrives(from: .top)
         }
+    }
+
+    /// What a finished "Copy Image" says, for as long as it stays (issue
+    /// #124, ADR-0091's revisit).
+    ///
+    /// One line, in the find bar's own language for a status claim: a check
+    /// in the secondary colour for the one that landed, a sentence in the
+    /// warning tier — the colour a failed download wears — for the one that
+    /// did not, because a copy that came back as nothing is a warning that
+    /// has not broken anything. It says only what the outcome proved:
+    /// `.copied` arrives after the clipboard write answered, so "Image
+    /// copied" is a fact rather than a hope (ADR-0018).
+    @ViewBuilder
+    private var imageCopyNotice: some View {
+        if let notice = model.imageCopyNotice(in: windowId) {
+            HStack(spacing: Design.Space.tight) {
+                switch notice.outcome {
+                case .copied:
+                    LucideGlyph(icon: .check, side: Metrics.checkSide)
+                        .foregroundStyle(.secondary)
+                    Text("Image copied")
+                case let .failed(failure):
+                    Text(Self.refusal(failure))
+                        .foregroundStyle(Design.Palette.warning)
+                }
+            }
+            .font(Design.Text.row)
+            .padding(.horizontal, Design.Space.snug)
+            .padding(.vertical, Design.Space.tight)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Design.Radius.medium))
+            .overlay(
+                RoundedRectangle(cornerRadius: Design.Radius.medium)
+                    .strokeBorder(.quaternary, lineWidth: Metrics.edge)
+            )
+            // Resting on the page, the find bar's own distance: a strip that
+            // has left the surface, but only just.
+            .elevation(Design.Elevation.resting)
+            .padding(.leading, Design.Space.regular)
+            .padding(.bottom, Design.Space.loose)
+            .arrives(from: .bottom)
+            // One element, saying the whole sentence — and said aloud on
+            // arrival, because a notice that leaves by itself is one a
+            // screen reader otherwise never meets. The id makes each copy's
+            // notice its own arrival, so the second copy is announced as
+            // well as the first.
+            .id(notice.id)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spoken(notice))
+            .onAppear {
+                AccessibilityNotification.Announcement(spoken(notice)).post()
+            }
+            .motion(.entrance, value: notice.id)
+        }
+    }
+
+    /// The sentence each refusal earns. Copy, so it lives here; categories,
+    /// so none of them is a socket's or a server's own words.
+    private static func refusal(_ failure: ImageCopy.Failure) -> String {
+        switch failure {
+        case .invalidAddress: "The image's address couldn't be used."
+        case .noTabPage: "The tab closed before the image could be copied."
+        case .notAnImage: "What came back wasn't an image."
+        case .tooLarge: "The image is too large to copy."
+        case .unreachable: "The image couldn't be fetched."
+        case .clipboard: "The clipboard refused the image."
+        }
+    }
+
+    /// What the notice says out loud. A failure is prefixed with the class of
+    /// thing that happened, because the drawn sentence alone says only why —
+    /// and somebody hearing "the image couldn't be fetched" deserves to know
+    /// that it was a copy that failed, not a page.
+    private func spoken(_ notice: BrowserModel.ImageCopyNotice) -> String {
+        switch notice.outcome {
+        case .copied: "Image copied"
+        case let .failed(failure): "Couldn't copy the image. \(Self.refusal(failure))"
+        }
+    }
+
+    /// Sizes that belong to this one strip rather than to the whole UI, so
+    /// they are named here instead of pretending to be design tokens.
+    private enum Metrics {
+        /// The check, inline with row-sized text — the find bar's own check
+        /// size, for the same glyph at the same job.
+        static let checkSide: CGFloat = 11
+        /// Half of `Design.Stroke.hairline`, and one device pixel at @2x.
+        /// Same case as the find bar's edge: it closes the material against
+        /// the page behind it rather than drawing a frame around it.
+        static let edge: CGFloat = 0.5
     }
 
     @ViewBuilder

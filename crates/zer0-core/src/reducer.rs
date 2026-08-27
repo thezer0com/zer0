@@ -28,7 +28,7 @@ use crate::routing::Route;
 use crate::session::Session;
 use crate::session::{CLOSED_TAB_MEMORY, ClosedTab};
 use crate::site_permissions::{
-    Gate, SiteCapability, SiteChoice, SiteDecision, SitePermissionPrompt,
+    Gate, SiteCapability, SiteChoice, SiteDecision, SitePermissionPrompt, origin_of,
 };
 use crate::tint;
 use crate::url_input::{self, Resolved};
@@ -194,7 +194,43 @@ fn apply(session: &mut Session, action: Action) -> Vec<EngineCommand> {
                 return Vec::new();
             };
             t.zoom_factor = factor;
+            // Write-through: the zoom is remembered for the site in this
+            // space (ADR-0129), and the tab's own value is the engine-facing
+            // copy of it rather than a second opinion. `pending_url` first,
+            // because a person zooming while a page loads is zooming the page
+            // that is arriving.
+            if let Some(url) = t.pending_url.clone().or_else(|| t.url.clone()) {
+                session.site_zooms.set(t.space, &url, factor);
+            }
             vec![EngineCommand::SetZoom { tab, factor }]
+        }
+
+        Action::ForgetSiteZoom { space, origin } => {
+            if session.browser.space(space).is_none() || !session.site_zooms.forget(space, &origin)
+            {
+                return Vec::new();
+            }
+            let tabs: Vec<TabId> = session
+                .browser
+                .tabs_in(space)
+                .into_iter()
+                .filter(|tab| tab.zoom_factor != Tab::DEFAULT_ZOOM)
+                .filter(|tab| {
+                    tab.url.as_deref().and_then(origin_of).as_deref() == Some(origin.as_str())
+                })
+                .map(|tab| tab.id)
+                .collect();
+            for tab in &tabs {
+                if let Some(tab) = session.browser.tab_mut(*tab) {
+                    tab.zoom_factor = Tab::DEFAULT_ZOOM;
+                }
+            }
+            tabs.into_iter()
+                .map(|tab| EngineCommand::SetZoom {
+                    tab,
+                    factor: Tab::DEFAULT_ZOOM,
+                })
+                .collect()
         }
 
         Action::CycleTab { delta } => {
@@ -495,6 +531,10 @@ fn apply(session: &mut Session, action: Action) -> Vec<EngineCommand> {
             // that outlived the identity it was given by is an approval nobody
             // can find, and one the next space to reuse the name inherits.
             session.site_permissions.forget_space(space);
+            // And the zooms read there: a size remembered for an identity that
+            // is gone is a preference nobody can find, and one the next space
+            // to reuse the name would inherit.
+            session.site_zooms.forget_space(space);
             // And the same for a certificate somebody waved through in it. An
             // exception belonging to an identity that no longer exists is one
             // nobody can find, and one the next space to reuse the name would
@@ -1030,8 +1070,34 @@ fn apply(session: &mut Session, action: Action) -> Vec<EngineCommand> {
             // *old* page asked is moot, and the handler behind it still has to
             // be told something. Silence there is a tab frozen on a page that
             // is no longer loaded.
-            let out = cancel_dialogs_for(session, tab);
+            let mut out = cancel_dialogs_for(session, tab);
             session.page_dialogs.tab_navigated(tab);
+
+            // The site's zoom, not the last page's (ADR-0129). The engine's
+            // own zoom survives a navigation, so without this a tab arriving
+            // from a zoomed site would carry that site's size onto this one —
+            // and a tab arriving on a site somebody zoomed elsewhere would
+            // miss it.
+            let site = session.browser.tab(tab).map(|t| {
+                (
+                    session
+                        .site_zooms
+                        .get(t.space, &url)
+                        .unwrap_or(Tab::DEFAULT_ZOOM),
+                    t.zoom_factor,
+                )
+            });
+            if let Some((wanted, was)) = site
+                && wanted != was
+            {
+                if let Some(t) = session.browser.tab_mut(tab) {
+                    t.zoom_factor = wanted;
+                }
+                out.push(EngineCommand::SetZoom {
+                    tab,
+                    factor: wanted,
+                });
+            }
             out
         }
 
@@ -2721,6 +2787,16 @@ fn choose_page_menu_item(
             // Through the tab it came from, so the space's cookies come with
             // it — the same reason `RetryDownload` picks a tab (ADR-0027).
             vec![EngineCommand::StartDownload { tab, url }]
+        }
+
+        PageMenuItem::CopyImage => {
+            let Some(url) = page_menu::address_for(item, target) else {
+                return Vec::new();
+            };
+            // The tab, for the same reason the save above names one: the
+            // fetch goes out over that space's cookie jar, and it is the
+            // pasteboard rather than the disk at the end of it.
+            vec![EngineCommand::CopyImage { tab, url }]
         }
 
         PageMenuItem::SearchForSelection => {

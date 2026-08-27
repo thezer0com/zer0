@@ -263,6 +263,14 @@ pub enum Action {
         tab: TabId,
         factor: f64,
     },
+    /// Forget one site's remembered zoom in one space from Settings.
+    ///
+    /// `origin` must be the exact canonical origin exposed by the core. A page
+    /// URL or malformed value is refused rather than repaired.
+    ForgetSiteZoom {
+        space: SpaceId,
+        origin: String,
+    },
     /// Move focus by `delta` within the active space, wrapping around.
     CycleTab {
         delta: i32,
@@ -1139,6 +1147,17 @@ pub enum EngineCommand {
     ResumeDownload {
         tab: TabId,
         id: DownloadId,
+    },
+
+    /// Fetch this image and put its decoded bytes on the pasteboard.
+    ///
+    /// Through a tab's web view for the same reason `StartDownload` is: the
+    /// bytes must come over the space's cookie jar, and only the tab's own
+    /// configuration carries it. Copying an image behind a login through the
+    /// wrong jar puts a sign-in page's bytes where the picture was going.
+    CopyImage {
+        tab: TabId,
+        url: String,
     },
 
     /// Fetch this site's icon, anonymously, and report back with

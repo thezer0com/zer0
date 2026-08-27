@@ -78,6 +78,63 @@ struct SettingsTests {
         #expect(m.preferences.blockContent, "an exception must not turn blocking off everywhere")
     }
 
+    @Test("forgetting a remembered zoom removes the row and resets the tab")
+    func forgettingASiteZoom() async throws {
+        let m = newModel()
+        let tab = try #require(m.snapshot.activeTab)
+
+        // The way a row is really made: a commit, then a zoom the core
+        // writes through to the site's ledger (ADR-0129).
+        m.send(.navigationCommitted(tab: tab, url: "https://docs.example/manual"))
+        m.send(.setTabZoom(tab: tab, factor: 1.5))
+
+        let row = try #require(m.siteZooms.first)
+        #expect(row.origin == "https://docs.example")
+        #expect(row.factor == 1.5)
+        #expect(m.snapshot.tabs.first { $0.id == tab }?.zoomFactor == 1.5)
+
+        m.forgetSiteZoom(row)
+
+        #expect(
+            m.siteZooms.isEmpty,
+            "a forgotten size must be gone, not remembered as the ordinary one"
+        )
+        #expect(
+            m.snapshot.tabs.first { $0.id == tab }?.zoomFactor == 1.0,
+            "the tab still open on that site has to come back to the ordinary size"
+        )
+    }
+
+    @Test("the same site in two spaces keeps two remembered sizes apart")
+    func oneSiteTwoSpaces() async throws {
+        let m = newModel()
+        let personal = m.snapshot.activeSpace
+        let personalTab = try #require(m.snapshot.activeTab)
+        m.send(.navigationCommitted(tab: personalTab, url: "https://docs.example/manual"))
+        m.send(.setTabZoom(tab: personalTab, factor: 1.5))
+
+        m.createSpace(named: "Work")
+        let work = m.snapshot.activeSpace
+        let workTab = try #require(m.snapshot.activeTab)
+        #expect(workTab != personalTab)
+        m.send(.navigationCommitted(tab: workTab, url: "https://docs.example/manual"))
+        m.send(.setTabZoom(tab: workTab, factor: 0.75))
+
+        #expect(m.siteZooms.count == 2, "one origin, two spaces, two rows")
+        #expect(Set(m.siteZooms.map(\.space)) == [personal, work])
+
+        let workRow = try #require(m.siteZooms.first { $0.space == work })
+        m.forgetSiteZoom(workRow)
+
+        // A row's identity is the pair, not the origin: forgetting at work
+        // must leave the personal size exactly as it was.
+        #expect(m.siteZooms.count == 1)
+        #expect(m.siteZooms.first?.space == personal)
+        #expect(m.siteZooms.first?.factor == 1.5)
+        #expect(m.snapshot.tabs.first { $0.id == personalTab }?.zoomFactor == 1.5)
+        #expect(m.snapshot.tabs.first { $0.id == workTab }?.zoomFactor == 1.0)
+    }
+
     @Test("settings survive a restart")
     func settingsPersist() async throws {
         let dir = FileManager.default.temporaryDirectory
