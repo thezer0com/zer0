@@ -153,8 +153,9 @@ release page and unzip it:
 - [ ] (script) `curl -fsI -L <enclosure-url-from-the-appcast>` → 200 — the
       bytes Sparkle will download exist.
 - [ ] (human) LGPL source offer attached to the release — both workflows
-      build it from the channel's own pin (`source-offer.sh`) and upload
-      `webkit-source-*.tar.zst` plus `SHA256SUMS` with `gh release upload`.
+      build it from the channel's own pin (`source-offer.sh`) and attach
+      `webkit-source-*.tar.zst` plus `SHA256SUMS` through the release upload
+      step.
       Per [licensing.md](licensing.md) §6: verify the asset name carries the
       pin `scripts/webkit/version.txt` names for the channel — stable the
       `WebKit-*` tag, canary the sha (ADR-0124). Compliance with LGPL §6(a)

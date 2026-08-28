@@ -45,6 +45,22 @@ refuse() {
 	fi
 }
 
+line_number() {
+	local file="$1" needle="$2"
+	awk -v needle="$needle" 'index($0, needle) { print NR; exit }' "$file"
+}
+
+require_before() {
+	local file="$1" before="$2" after="$3" why="$4"
+	local before_line after_line
+	before_line="$(line_number "$file" "$before")"
+	after_line="$(line_number "$file" "$after")"
+	if [[ -z "$before_line" || -z "$after_line" || "$before_line" -ge "$after_line" ]]; then
+		fail "$file must place \"$before\" before \"$after\".
+  $why"
+	fi
+}
+
 check_release_policy() {
 	# (a) The official release is a tag, never a branch push: stable fires
 	# on `v*` only. A stable that also fires on a branch is a second
@@ -75,6 +91,17 @@ check_release_policy() {
 	# copied step or an upstream change can flip silently.
 	require "$STABLE" "make_latest: true" \
 		"The v* release must carry make_latest: true in writing (ADR-0125): the badge moves only with a tag."
+
+	require_before "$STABLE" "- name: build WebKit source offer" "- name: create release" \
+		"The stable release must not become public before the pinned WebKit source offer is ready (docs/licensing.md section 6)."
+	require "$STABLE" "files: |" \
+		"The stable release action must upload the source offer in the same publication step, before the release is finalized."
+	require "$STABLE" "dist-source/webkit-source-*.tar.zst" \
+		"The stable release must attach the pinned WebKit source tarball."
+	require "$STABLE" "dist-source/SHA256SUMS" \
+		"The stable release must attach the source-offer checksum."
+	require "$STABLE" "LGPL WebKit source offer:" \
+		"The stable release notes must point recipients to the attached source offer."
 }
 
 check_release_policy

@@ -206,9 +206,20 @@ jobs:
           path: ${{ steps.ver.outputs.archive }}
           retention-days: 90
 
+      - name: restore WebKit source offer
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/cache@v4
+        with:
+          path: dist-source
+          key: webkit-source-${{ steps.pin.outputs.pin }}
+
+      - name: build WebKit source offer
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./scripts/source-offer.sh --out dist-source --release "$GITHUB_REF_NAME"
+
       - name: create release
-        # The tag already exists; this attaches the archive to it as a
-        # downloadable asset. The release is published (not draft) because
+        # The tag already exists; this attaches the archive and source offer to
+        # it as downloadable assets. The release is published (not draft) because
         # the appcast enclosure points at this exact URL and Sparkle cannot
         # fetch a draft asset -- the "release goes live" signal is the
         # appcast entry that follows, not the visibility of this page.
@@ -221,35 +232,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.ver.outputs.archive }}
+          files: |
+            ${{ steps.ver.outputs.archive }}
+            dist-source/webkit-source-*.tar.zst
+            dist-source/SHA256SUMS
+          body: |
+            LGPL WebKit source offer: `webkit-source-${{ steps.pin.outputs.pin }}.tar.zst` and `SHA256SUMS` are attached to this release.
           generate_release_notes: true
           make_latest: true
-
-      # LGPL 6(a) (docs/licensing.md section 6): a release that embeds WebKit
-      # must offer the exact source of the pinned revision alongside the
-      # binary. The tarball is deterministic per pin, so it is cached as a
-      # file (the build-webkit.yml pattern) rather than re-cloned and
-      # re-compressed on every release.
-      - name: restore WebKit source offer
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/cache@v4
-        with:
-          path: dist-source
-          key: webkit-source-${{ steps.pin.outputs.pin }}
-
-      - name: build WebKit source offer
-        if: startsWith(github.ref, 'refs/tags/')
-        run: ./scripts/source-offer.sh --out dist-source --release "$GITHUB_REF_NAME"
-
-      - name: upload WebKit source offer
-        # --clobber, and the same asset name on every release sharing the
-        # WebKit pin: the tag's tarball also lands on canary's releases.
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "$GITHUB_REF_NAME" \
-            dist-source/webkit-source-*.tar.zst dist-source/SHA256SUMS --clobber
 
       - name: publish appcast
         # Last on purpose and the only writer of the appcast. The release

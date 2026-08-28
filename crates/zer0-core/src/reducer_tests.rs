@@ -5,8 +5,8 @@ use crate::certificates::{
 use crate::http_auth::{AuthChoice, AuthDecision, HttpAuthRequest, HttpAuthScheme};
 use crate::icons::IconCandidate;
 use crate::model::{
-    Browser, NavigationErrorKind, SpaceId, SpaceProfile, TabId, TabKind, DEFAULT_SPLIT_RATIO,
-    MAX_SPLIT_RATIO, MIN_SPLIT_RATIO,
+    Browser, DEFAULT_SPLIT_RATIO, MAX_SPLIT_RATIO, MIN_SPLIT_RATIO, NavigationErrorKind, SpaceId,
+    SpaceProfile, TabId, TabKind,
 };
 use crate::page_menu::{PageMenuItem, PageTarget};
 use crate::protocol::{Action, EngineCommand, ViewConfiguration};
@@ -188,18 +188,20 @@ fn events_for_a_closed_tab_are_ignored() {
     f.send(Action::CloseTab { tab });
 
     // These race with the close in the real engine. They must not panic.
-    assert!(f
-        .send(Action::TitleChanged {
+    assert!(
+        f.send(Action::TitleChanged {
             tab,
             title: "ghost".into()
         })
-        .is_empty());
-    assert!(f
-        .send(Action::NavigateTo {
+        .is_empty()
+    );
+    assert!(
+        f.send(Action::NavigateTo {
             tab,
             input: "a.com".into()
         })
-        .is_empty());
+        .is_empty()
+    );
     assert!(f.send(Action::GoBack { tab }).is_empty());
     assert!(f.send(Action::CloseTab { tab }).is_empty());
 }
@@ -458,13 +460,14 @@ fn a_failure_for_a_closed_tab_is_ignored() {
 
     // The engine reports asynchronously, so a load can fail after the user has
     // already closed the tab it was in.
-    assert!(f
-        .send(Action::NavigationFailed {
+    assert!(
+        f.send(Action::NavigationFailed {
             tab,
             kind: NavigationErrorKind::Offline,
             message: "offline".into(),
         })
-        .is_empty());
+        .is_empty()
+    );
     assert!(f.session.browser.tab(tab).is_none());
 }
 
@@ -3360,11 +3363,12 @@ fn closing_the_tab_leaves_what_you_kept_alone() {
     f.send(Action::CloseTab { tab });
 
     assert_eq!(f.session.browser.tab_count(), 0);
-    assert!(f
-        .session
-        .bookmarks
-        .for_url("https://avelino.run/")
-        .is_some());
+    assert!(
+        f.session
+            .bookmarks
+            .for_url("https://avelino.run/")
+            .is_some()
+    );
 }
 
 #[test]
@@ -3892,21 +3896,27 @@ fn a_window_a_page_opened_goes_with_the_page_that_closes_itself() {
 fn a_page_asked_for_a_window_only_when_it_described_one() {
     assert!(!WindowRequest::default().asked_for_a_window());
 
-    assert!(WindowRequest {
-        width: Some(480.0),
-        ..WindowRequest::default()
-    }
-    .asked_for_a_window());
-    assert!(WindowRequest {
-        y: Some(80.0),
-        ..WindowRequest::default()
-    }
-    .asked_for_a_window());
-    assert!(WindowRequest {
-        toolbars_visible: Some(false),
-        ..WindowRequest::default()
-    }
-    .asked_for_a_window());
+    assert!(
+        WindowRequest {
+            width: Some(480.0),
+            ..WindowRequest::default()
+        }
+        .asked_for_a_window()
+    );
+    assert!(
+        WindowRequest {
+            y: Some(80.0),
+            ..WindowRequest::default()
+        }
+        .asked_for_a_window()
+    );
+    assert!(
+        WindowRequest {
+            toolbars_visible: Some(false),
+            ..WindowRequest::default()
+        }
+        .asked_for_a_window()
+    );
     assert!(
         !WindowRequest {
             toolbars_visible: Some(true),
@@ -4509,9 +4519,10 @@ fn a_space_that_records_nothing_has_nowhere_to_put_an_extensions_page() {
             .any(|c| matches!(c, ViewConfiguration::Extension { .. })),
         "a private window was handed a persistent store: {out:?}"
     );
-    assert!(!out
-        .iter()
-        .any(|c| matches!(c, EngineCommand::LoadUrl { .. })));
+    assert!(
+        !out.iter()
+            .any(|c| matches!(c, EngineCommand::LoadUrl { .. }))
+    );
     // Refused as an extension's, and said so, rather than left blank.
     let after = f.session.browser.tab(tab).unwrap();
     assert_eq!(

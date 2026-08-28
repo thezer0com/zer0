@@ -707,10 +707,12 @@ fn an_answer_about_starting_a_program_survives_a_relaunch() {
     assert!(!refused.allowed);
 
     // And nothing was invented about a program nobody was asked about.
-    assert!(after
-        .native_hosts
-        .decision("aeblfdkhhhdcdjpifhhbdiojplfjncoa", "/bin/sh")
-        .is_none());
+    assert!(
+        after
+            .native_hosts
+            .decision("aeblfdkhhhdcdjpifhhbdiojplfjncoa", "/bin/sh")
+            .is_none()
+    );
 }
 
 #[test]
@@ -1141,13 +1143,15 @@ fn clearing_history_actually_clears_it() {
         .record("https://embarrassing.example/", None, 100);
     let mut store = Store::in_memory().unwrap();
     store.save(&StorableSession::project(&before)).unwrap();
-    assert!(store
-        .load()
-        .unwrap()
-        .unwrap()
-        .history
-        .get("https://embarrassing.example/")
-        .is_some());
+    assert!(
+        store
+            .load()
+            .unwrap()
+            .unwrap()
+            .history
+            .get("https://embarrassing.example/")
+            .is_some()
+    );
 
     before.history.clear();
     store.save(&StorableSession::project(&before)).unwrap();

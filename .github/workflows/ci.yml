@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 jobs:
-  # `check.sh` runs these three as its first steps and must keep running them —
+  # `check.sh` runs these four as its first steps and must keep running them —
   # ADR-0030 is that the gate is one command, not a checklist. This is not a
   # second gate, it is the cheap end of the same one brought forward. A `Lock:`
   # naming a test that was renamed away is a mistake worth hearing in a minute
@@ -44,9 +44,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - run: ./scripts/adr-fixtures.sh
       - run: ./scripts/adr-check.sh
       - run: ./scripts/scratch-check.sh
+      - run: ./scripts/commit-history.sh
 
   macos:
     name: core + apple shell
@@ -79,6 +81,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # Printed, not assumed. When this job fails in a year the first question is
       # which compiler and which SDK, and the answer has to already be in the log

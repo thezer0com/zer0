@@ -71,6 +71,12 @@ echo "==> design tokens"
 echo "==> webkit versions"
 ./scripts/webkit/check-versions.sh
 
+# Also cheap, also before the compilers: the release base must have a complete,
+# local history without subjects that plainly announce unfinished work. This is
+# deliberately not a remote push check; a laptop cannot prove GitHub state.
+echo "==> commit history"
+./scripts/commit-history.sh
+
 # Also cheap, also before the compilers: the release policy is written in
 # two workflow files (ADR-0125) and nothing on a laptop executes a workflow
 # -- these greps are what keep "documented" meaning "still written down".
