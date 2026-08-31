@@ -193,12 +193,14 @@ struct ZZPageDialogShots {
         .disabled(if: ProcessInfo.processInfo.environment["ZER0_SHOT"] == nil)
     )
     func aMessageWithNothingInIt() {
-        let shot = Shot(size: Self.window) {
-            scene(dark: false) {
-                PageDialogSheet(dialog: dialog(kind: .alert, message: "")) { _, _ in }
+        for dark in [false, true] {
+            let shot = Shot(size: Self.window) {
+                scene(dark: dark) {
+                    PageDialogSheet(dialog: dialog(kind: .alert, message: "")) { _, _ in }
+                }
             }
+            shot.advance(Double(promptSettleMs()) / 1000 + 0.2)
+            shot.write("page-dialog-empty-\(dark ? "dark" : "light")")
         }
-        shot.advance(Double(promptSettleMs()) / 1000 + 0.2)
-        shot.write("page-dialog-empty-light")
     }
 }

@@ -1413,10 +1413,9 @@ stays a literal until a second list wants one.
 
 Also paid: `.padding(.vertical, 3)` on the shortcut key cap in `SettingsView`
 is now `Design.Space.hair` — a point taller, back on the rhythm, and looked at.
-**Still owed:** `.padding(.top, 100)` in `BrowserView.swift`, the command bar's
-distance from the top of the window. Larger than the largest token and unnamed;
-it belongs in `CommandBar.Metrics` as the answer to "how far down does the
-palette sit", but the file is not mine to touch.
+Also paid: the command bar's distance from the top of the window is now
+`CommandBar.Metrics.dropFromTop`, applied in `BrowserView.swift` and owned by
+the panel that gives the number meaning.
 
 ### Strokes that bypass `Design.Stroke` — half paid, and one investigated
 
@@ -1510,9 +1509,10 @@ same case as each other**:
 Every panel outside `Sidebar.swift` and `BrowserView.swift` now has a local
 `Metrics`, listed in §2 under [Local metrics](#local-metrics-the-honest-exception).
 Still literal in the two files left to their owners: the session warning's 560,
-the error address capsule's 420, the command bar's 100pt top padding, the
-rename popover's 220×28. `EmptyState`'s 320pt message cap stays inline inside
-`DesignSystem.swift`, which is where the component lives.
+the error address capsule's 420, and the rename popover's 220×28. The command
+bar's top offset is now named in its local `Metrics`. `EmptyState`'s 320pt
+message cap stays inline inside `DesignSystem.swift`, which is where the
+component lives.
 
 ~~The three empty-state heights: 220, 220, 220, 260.~~ All four now take
 `Design.Pane.emptyStateMinHeight` (220). Air Traffic's also changed from

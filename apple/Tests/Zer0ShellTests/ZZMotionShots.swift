@@ -73,6 +73,8 @@ struct ZZMotionShots {
         return model
     }
 
+    private static let settledWindow = CGSize(width: 900, height: 620)
+
     @Test(
         "the command bar arrives over time rather than between two frames",
         .disabled(if: ProcessInfo.processInfo.environment["ZER0_SHOT"] == nil)
@@ -100,8 +102,6 @@ struct ZZMotionShots {
             let now = shot.frame().colour(x: 6, y: 6).usingColorSpace(.deviceRGB)!
             levels.append((Double(now.brightnessComponent) * 1000).rounded() / 1000)
         }
-        shot.write("summon-settled")
-
         let seen = levels.reduce(into: [Double]()) { out, value in
             if out.last != value { out.append(value) }
         }
@@ -113,6 +113,20 @@ struct ZZMotionShots {
             "the window dimmed in \(seen.count) step(s): the bar did not arrive, it appeared"
         )
         #expect(seen.last! < Double(base), "the window has to end up dimmed")
+
+        let settledModel = barModel()
+        let settledShot = Shot(size: Self.settledWindow) {
+            Summoning().environment(settledModel)
+                .frame(width: Self.settledWindow.width, height: Self.settledWindow.height)
+        }
+        settledShot.advance(0.3)
+        settledModel.commandBarOpen = true
+        settledShot.advance(0.4)
+
+        #expect(
+            settledShot.frame().pixelsWide >= Int(CommandBar.Metrics.width)
+        )
+        settledShot.write("summon-settled")
     }
 
     // MARK: - Switching spaces
