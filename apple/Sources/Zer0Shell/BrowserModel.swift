@@ -2567,6 +2567,26 @@ public final class BrowserModel {
         core.conversationPageTitle(conversation: id)
     }
 
+    /// What this space holds that somebody was interrupted in the middle of:
+    /// tabs whose page process ended, and threads stopped on a tool nobody has
+    /// answered.
+    ///
+    /// Asked of the core rather than worked out from `snapshot`, because which
+    /// tabs and threads qualify — and in what order they are offered back — is
+    /// behaviour, and a shell that filtered or re-sorted here would be a second
+    /// answer to a question ⌘E and the tab list already answer their own way.
+    ///
+    /// **Nothing mirrors this into a property, and that is the design.** It is
+    /// read when the Space Lens draws, the way `conversation(_:)` is read when
+    /// `ChatPage` draws, so there is no stale copy and nothing to persist: a
+    /// lens that survived a relaunch would offer work the new session does not
+    /// hold. A caller that draws from it watches `snapshot` and
+    /// `conversationRevision`, which are the two values a dispatch already
+    /// changes.
+    public func spaceResumeSummary(space: SpaceId) -> SpaceResumeSummary {
+        core.spaceResumeSummary(space: space)
+    }
+
     /// Everything the browser can honestly say about one tool, separated by who
     /// said it. `nil` for a tool no connected server publishes — which is what
     /// a consent card draws when it has nothing of its own to say.

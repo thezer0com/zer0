@@ -7,9 +7,14 @@
 //! undone.
 
 use super::*;
+use crate::chat::{
+    ConversationId, ConversationScope, MessageRole, PageAnchor, ToolCall, ToolCallId,
+    ToolCallState, ToolInvocation,
+};
+use crate::model::{NavigationErrorKind, SpaceId, TabId};
 use crate::protocol::Action;
 use crate::reducer::dispatch;
-use crate::session::Session;
+use crate::session::{ResumeConversation, ResumeTab, Session};
 
 /// A directory of its own per test, so two of them cannot fight over a file.
 fn scratch(name: &str) -> PathBuf {
@@ -726,4 +731,265 @@ fn core_version_is_the_version_cargo_built() {
         version.split('.').count() >= 3 && version.starts_with(|c: char| c.is_ascii_digit()),
         "a host renders this string as-is, so it must be major.minor.patch shaped: {version}"
     );
+}
+
+fn conversation_awaiting_consent(
+    session: &mut Session,
+    scope: ConversationScope,
+    call_id: &str,
+) -> ConversationId {
+    let conversation = session.chat.start(scope, 1);
+    let message = session
+        .chat
+        .append(conversation, MessageRole::Assistant, String::new(), 2)
+        .expect("the conversation exists");
+    session
+        .chat
+        .get_mut(conversation)
+        .expect("the conversation exists")
+        .message_mut(message)
+        .expect("the message exists")
+        .tool_calls
+        .push(ToolCall {
+            invocation: ToolInvocation {
+                id: ToolCallId(call_id.into()),
+                server: "test".into(),
+                tool: "read".into(),
+                arguments: "{}".into(),
+            },
+            state: ToolCallState::AwaitingConsent,
+            result: String::new(),
+            requested_at_ms: 3,
+        });
+    conversation
+}
+
+#[test]
+fn space_resume_summary_projects_only_recoverable_work_in_space_order() {
+    let core = Zer0::in_memory(
+        "Personal".into(),
+        "ds-personal".into(),
+        HostCapabilities {
+            extension_runtime: true,
+            page_printing: true,
+        },
+    );
+    let (work, dead_first, dead_second, awaiting_consent) = {
+        let mut state = core.lock();
+        let personal = state.session.browser.active_space();
+        dispatch(
+            &mut state.session,
+            Action::CreateSpace {
+                name: "Work".into(),
+                data_store_id: "ds-work".into(),
+                ephemeral: false,
+            },
+        );
+        let work = state.session.browser.active_space();
+
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(work),
+                url: None,
+                parent: None,
+            },
+        );
+        let dead_first = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationCommitted {
+                tab: dead_first,
+                url: "https://work.example/first".into(),
+            },
+        );
+        dispatch(
+            &mut state.session,
+            Action::PageProcessEnded { tab: dead_first },
+        );
+
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(work),
+                url: None,
+                parent: None,
+            },
+        );
+        let running = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationCommitted {
+                tab: running,
+                url: "https://work.example/running".into(),
+            },
+        );
+
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(work),
+                url: None,
+                parent: None,
+            },
+        );
+        let other_error = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationFailed {
+                tab: other_error,
+                kind: NavigationErrorKind::Offline,
+                message: "offline".into(),
+            },
+        );
+
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(work),
+                url: None,
+                parent: None,
+            },
+        );
+        let dead_second = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationCommitted {
+                tab: dead_second,
+                url: "https://work.example/second".into(),
+            },
+        );
+        dispatch(
+            &mut state.session,
+            Action::PageProcessEnded { tab: dead_second },
+        );
+        dispatch(
+            &mut state.session,
+            Action::MoveTab {
+                tab: dead_second,
+                space: work,
+                index: 0,
+            },
+        );
+
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(personal),
+                url: None,
+                parent: None,
+            },
+        );
+        let dead_elsewhere = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationCommitted {
+                tab: dead_elsewhere,
+                url: "https://personal.example/dead".into(),
+            },
+        );
+        dispatch(
+            &mut state.session,
+            Action::PageProcessEnded {
+                tab: dead_elsewhere,
+            },
+        );
+
+        let work_page = ConversationScope::Page {
+            space: work,
+            page: PageAnchor::of("https://work.example/first").expect("anchorable URL"),
+        };
+        let awaiting_consent =
+            conversation_awaiting_consent(&mut state.session, work_page.clone(), "work-call");
+        state.session.chat.start(work_page, 4);
+        conversation_awaiting_consent(
+            &mut state.session,
+            ConversationScope::Space { space: work },
+            "space-call",
+        );
+        conversation_awaiting_consent(
+            &mut state.session,
+            ConversationScope::Page {
+                space: personal,
+                page: PageAnchor::of("https://personal.example/dead").expect("anchorable URL"),
+            },
+            "personal-call",
+        );
+
+        (work, dead_first, dead_second, awaiting_consent)
+    };
+
+    let summary: SpaceResumeSummary = core.space_resume_summary(work);
+    let tabs: Vec<TabId> = summary.tabs.iter().map(|tab: &ResumeTab| tab.id).collect();
+    let conversations: Vec<ConversationId> = summary
+        .conversations
+        .iter()
+        .map(|conversation: &ResumeConversation| conversation.id)
+        .collect();
+
+    assert_eq!(tabs, vec![dead_second, dead_first]);
+    assert_eq!(conversations, vec![awaiting_consent]);
+}
+
+#[test]
+fn space_resume_summary_is_empty_for_an_unknown_space() {
+    let core = Zer0::in_memory(
+        "Personal".into(),
+        "ds-personal".into(),
+        HostCapabilities {
+            extension_runtime: true,
+            page_printing: true,
+        },
+    );
+
+    let summary: SpaceResumeSummary = core.space_resume_summary(SpaceId(u64::MAX));
+
+    assert!(summary.tabs.is_empty());
+    assert!(summary.conversations.is_empty());
+}
+
+#[test]
+fn space_resume_summary_does_not_mutate_the_session() {
+    let core = Zer0::in_memory(
+        "Personal".into(),
+        "ds-personal".into(),
+        HostCapabilities {
+            extension_runtime: true,
+            page_printing: true,
+        },
+    );
+    let (space, before) = {
+        let mut state = core.lock();
+        let space = state.session.browser.active_space();
+        dispatch(
+            &mut state.session,
+            Action::OpenTab {
+                space: Some(space),
+                url: None,
+                parent: None,
+            },
+        );
+        let tab = state.session.browser.active_tab().expect("tab opened");
+        dispatch(
+            &mut state.session,
+            Action::NavigationCommitted {
+                tab,
+                url: "https://example.com/dead".into(),
+            },
+        );
+        dispatch(&mut state.session, Action::PageProcessEnded { tab });
+        conversation_awaiting_consent(
+            &mut state.session,
+            ConversationScope::Page {
+                space,
+                page: PageAnchor::of("https://example.com/dead").expect("anchorable URL"),
+            },
+            "call",
+        );
+        (space, state.session.clone())
+    };
+
+    let _: SpaceResumeSummary = core.space_resume_summary(space);
+
+    assert_eq!(core.lock().session, before);
 }

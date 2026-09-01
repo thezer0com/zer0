@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::bookmarks::Bookmarks;
 use crate::certificates::{CertificateReport, TrustExceptions};
-use crate::chat::Chat;
+use crate::chat::{Chat, Conversation, ConversationScope, PageAnchor};
 use crate::downloads::Downloads;
 use crate::extension_permissions::ExtensionConsent;
 use crate::extension_pins::ExtensionPins;
@@ -15,7 +15,7 @@ use crate::history::History;
 use crate::http_auth::HttpAuth;
 use crate::icons::Icons;
 use crate::mcp::McpRegistry;
-use crate::model::{Browser, SpaceId, TabId, TabKind};
+use crate::model::{Browser, NavigationErrorKind, SpaceId, TabId, TabKind};
 use crate::native_messaging::NativeHostLedger;
 use crate::navigation_state::NavigationStates;
 use crate::page_dialogs::PageDialogs;
@@ -32,6 +32,29 @@ pub struct ClosedTab {
     pub url: Option<String>,
     pub space: SpaceId,
     pub kind: TabKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct ResumeTab {
+    pub id: TabId,
+    pub url: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct ResumeConversation {
+    pub id: crate::chat::ConversationId,
+    pub page: PageAnchor,
+    pub opening_question: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct SpaceResumeSummary {
+    pub tabs: Vec<ResumeTab>,
+    pub conversations: Vec<ResumeConversation>,
 }
 
 /// How many closed tabs are worth remembering. Deep enough to undo a mistake,
@@ -156,6 +179,68 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn space_resume_summary(&self, space: SpaceId) -> SpaceResumeSummary {
+        if self.browser.space(space).is_none() {
+            return SpaceResumeSummary {
+                tabs: Vec::new(),
+                conversations: Vec::new(),
+            };
+        }
+
+        let tabs = self
+            .browser
+            .tabs_in(space)
+            .into_iter()
+            .filter(|tab| {
+                tab.last_error
+                    .as_ref()
+                    .is_some_and(|error| error.kind == NavigationErrorKind::PageProcessEnded)
+            })
+            .map(|tab| ResumeTab {
+                id: tab.id,
+                url: tab.url.clone(),
+                title: tab.title.clone(),
+            })
+            .collect();
+
+        let mut conversations: Vec<&Conversation> = self
+            .chat
+            .all()
+            .iter()
+            .filter(|conversation| {
+                conversation.needs_consent()
+                    && matches!(
+                        conversation.scope,
+                        ConversationScope::Page { space: owner, .. } if owner == space
+                    )
+            })
+            .collect();
+        conversations.sort_by(|a, b| {
+            b.last_activity_ms()
+                .cmp(&a.last_activity_ms())
+                .then_with(|| b.id.cmp(&a.id))
+        });
+
+        let conversations = conversations
+            .into_iter()
+            .filter_map(|conversation| {
+                let ConversationScope::Page { page, .. } = &conversation.scope else {
+                    return None;
+                };
+                Some(ResumeConversation {
+                    id: conversation.id,
+                    page: page.clone(),
+                    opening_question: conversation.opening_question().to_string(),
+                })
+            })
+            .collect();
+
+        SpaceResumeSummary {
+            tabs,
+            conversations,
+        }
+    }
+
     /// Write down a *remembered* answer about a tool, bound to the tool it was
     /// given about.
     ///

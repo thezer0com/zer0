@@ -1,6 +1,6 @@
 # ADR-0013: Focus lands where the person is about to type, and the text comes selected
 
-- **Status:** Accepted
+- **Status:** Accepted, with the once-only guard (detail 2 below) superseded by ADR-0132
 - **Date:** 2026-02-12
 - **Lock:** `apple/Tests/Zer0ShellTests/CommandBarFocusTests.swift::CommandBarFocusTests/fieldTakesFocus`
 

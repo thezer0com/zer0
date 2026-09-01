@@ -42,6 +42,11 @@ struct PopupTests {
               </script>
             </body></html>
             """),
+            "/plain": .html("""
+            <html><body>
+              <a id="go" href="/child">go</a>
+            </body></html>
+            """),
             "/child": .html("<html><body><p id=\"child\">child</p></body></html>"),
             // Opens a window itself, at load, with nobody having touched
             // anything. It has to be the page that does it: `evaluateJavaScript`
@@ -206,6 +211,59 @@ struct PopupTests {
             """)
         #expect(model.snapshot.activeTab == opened.id, "a tab you asked for arrives in front")
         #expect(opened.parent == openerTab, "the tree lost where this page came from")
+    }
+
+    @Test("command-clicking an ordinary link opens it in a new tab")
+    func commandClickOpensANewTab() async throws {
+        let server = try await serve()
+        defer { server.stop() }
+        let origin = "http://127.0.0.1:\(server.port)"
+
+        let model = BrowserModel(storagePath: nil)
+        let openerTab = try #require(model.snapshot.activeTab)
+        model.send(.navigateTo(tab: openerTab, input: "\(origin)/plain"))
+        #expect(await eventually { model.activeTab?.loadingComplete == true })
+        let parent = try #require(model.engine.webView(for: openerTab))
+        let window = testWindow(NSRect(x: 0, y: 0, width: 800, height: 600))
+        defer { window.close() }
+        show(parent, in: window)
+
+        let point = parent.convert(CGPoint(x: 20, y: 20), to: nil)
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: point,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+        parent.mouseDown(with: event)
+        let release = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: point,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 2,
+            clickCount: 1,
+            pressure: 0
+        ))
+        parent.mouseUp(with: release)
+
+        #expect(
+            await eventually { model.snapshot.tabs.count > 1 },
+            "command-click must not leave an ordinary link in the opener tab"
+        )
+        let opened = try #require(model.snapshot.tabs.first { $0.id != openerTab })
+        #expect(model.snapshot.activeTab == opened.id)
+        #expect(opened.parent == openerTab)
+        #expect(opened.window == model.snapshot.tabs.first { $0.id == openerTab }?.window)
+        #expect(model.activeTab?.pendingUrl == "\(origin)/child")
+        #expect(model.snapshot.tabs.first { $0.id == openerTab }?.url?.hasSuffix("/plain") == true)
     }
 
     /// A pop-up opened inside a private window must not leave it (ADR-0065).

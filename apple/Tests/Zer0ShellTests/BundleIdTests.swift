@@ -99,6 +99,17 @@ import Testing
                 "the canary directory follows the bundle id; got \(canary.lastPathComponent)")
     }
 
+    @Test
+    func bundleSourceRegistersBothWebSchemes() throws {
+        let bundleScript = try String(
+            contentsOfFile: Self.appleRoot.appendingPathComponent("scripts/bundle.sh").path,
+            encoding: .utf8
+        )
+        #expect(bundleScript.contains("<key>CFBundleURLTypes</key>"))
+        #expect(bundleScript.contains("<string>http</string>"))
+        #expect(bundleScript.contains("<string>https</string>"))
+    }
+
     /// `defaultStoragePath()` must delegate to the bundle-id rule rather than
     /// hold a literal of its own — a literal was the bug, and a pure-function
     /// test above cannot see a revert that bypasses the helper. Under

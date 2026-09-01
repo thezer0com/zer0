@@ -20,11 +20,11 @@ name: canary
 # publish -- none of them can run without the secrets that precede
 # them.
 #
-# The WebKit engine is not built here. It is restored from the cache
-# written by build-webkit.yml, keyed on the canary sha in
-# scripts/webkit/version.txt (ADR-0124: canary pins an exact commit of
-# WebKit `main`). If that cache is missing the job fails fast: a canary
-# release without its pinned engine is no release at all.
+# The WebKit engine is normally restored from the cache written by
+# build-webkit.yml, keyed on the canary sha in scripts/webkit/version.txt
+# (ADR-0124: canary pins an exact commit of WebKit `main`). A cold cache is
+# rebuilt here and saved under the same key, so a missing producer run cannot
+# turn a valid canary push into a release failure.
 on:
   push:
     branches: [main]
@@ -103,7 +103,22 @@ jobs:
         with:
           path: webkit-build.tar.zst
           key: webkit-canary-${{ steps.pin.outputs.pin }}
-          fail-on-cache-miss: true
+
+      - name: build WebKit on cache miss
+        if: steps.webkit.outputs.cache-hit != 'true'
+        run: |
+          ./scripts/webkit/fetch.sh
+          ./scripts/webkit/build.sh --release
+          tar -c -I 'zstd -19 -T0' \
+            -f webkit-build.tar.zst \
+            -C ~/.cache/zer0/webkit/src/WebKitBuild Release
+
+      - name: save WebKit build
+        if: steps.webkit.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: webkit-build.tar.zst
+          key: webkit-canary-${{ steps.pin.outputs.pin }}
 
       - name: extract WebKit
         # Restore puts the tarball at the repo root; embed-webkit.sh

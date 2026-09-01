@@ -104,6 +104,49 @@ fn opening_a_tab_creates_a_webview_and_focuses_it() {
 }
 
 #[test]
+fn opening_a_child_tab_uses_its_parents_space_and_window() {
+    let mut f = Fixture::new();
+    let parent = f.open();
+    let parent_tab = f.session.browser.tab(parent).unwrap();
+    let parent_space = parent_tab.space;
+    let parent_window = parent_tab.window;
+
+    f.send(Action::OpenWindow {
+        onto: WindowContents::NewPrivateSpace {
+            name: "Private".into(),
+            data_store_id: "ds-private".into(),
+        },
+    });
+    assert_ne!(f.session.browser.active_space(), parent_space);
+    assert_ne!(f.session.browser.key_window(), parent_window);
+
+    let out = f.send(Action::OpenTab {
+        space: None,
+        url: Some("https://example.com/child".into()),
+        parent: Some(parent),
+    });
+
+    let opened = f.session.browser.active_tab().unwrap();
+    let opened_tab = f.session.browser.tab(opened).unwrap();
+    assert_eq!(opened_tab.space, parent_space);
+    assert_eq!(opened_tab.window, parent_window);
+    assert_eq!(opened_tab.parent, Some(parent));
+    assert!(!opened_tab.opened_by_page);
+    let created = out.iter().any(
+        |command| matches!(command, EngineCommand::CreateWebView { tab, .. } if *tab == opened),
+    );
+    let loaded = out
+        .iter()
+        .any(|command| matches!(command, EngineCommand::LoadUrl { tab, .. } if *tab == opened));
+    let adopted = out
+        .iter()
+        .any(|command| matches!(command, EngineCommand::AdoptWebView { .. }));
+    assert!(created);
+    assert!(loaded);
+    assert!(!adopted);
+}
+
+#[test]
 fn opening_with_a_url_loads_before_focusing() {
     let mut f = Fixture::new();
     let out = f.send(Action::OpenTab {

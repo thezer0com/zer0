@@ -17,7 +17,12 @@ struct CommandBarFocusTests {
         onSubmit: @escaping () -> Void = {},
         onCancel: @escaping () -> Void = {},
         onMove: @escaping (Int) -> Void = { _ in }
-    ) -> (window: NSWindow, field: NSTextField, coordinator: CommandBarField.Coordinator) {
+    ) -> (
+        window: NSWindow,
+        field: NSTextField,
+        coordinator: CommandBarField.Coordinator,
+        representable: CommandBarField
+    ) {
         var storage = text
         let representable = CommandBarField(
             text: Binding(get: { storage }, set: { storage = $0 }),
@@ -37,13 +42,58 @@ struct CommandBarFocusTests {
         window.makeKeyAndOrderFront(nil)
 
         representable.sync(field, coordinator: coordinator)
-        return (window, field, coordinator)
+        return (window, field, coordinator, representable)
+    }
+
+    /// The mounted field, with the opening take already accounted for and
+    /// nothing in flight against the field itself.
+    ///
+    /// `mount`'s sync arms a `takeFocus` that the main queue may hold for
+    /// several turns — long enough to land after a later steal and hand
+    /// focus back on its own, which let the reclaim test pass with nothing
+    /// implemented. Here the take is armed against a scratch field that
+    /// never reaches a window, and `takeFocus` refuses a field with no
+    /// window, so the mounted field starts with a clean queue and any
+    /// focus it later gets or loses can only be the test's doing.
+    private func mountWithLatchPrimed(text: String) -> (
+        window: NSWindow,
+        field: NSTextField,
+        coordinator: CommandBarField.Coordinator,
+        representable: CommandBarField
+    ) {
+        var storage = text
+        let representable = CommandBarField(
+            text: Binding(get: { storage }, set: { storage = $0 }),
+            onSubmit: {},
+            onCancel: {},
+            onMove: { _ in }
+        )
+        let coordinator = representable.makeCoordinator()
+        let field = representable.buildField(delegate: coordinator)
+
+        let scratch = representable.buildField(delegate: coordinator)
+        representable.sync(scratch, coordinator: coordinator)
+
+        let window = testWindow(
+            NSRect(x: 0, y: 0, width: 620, height: 60),
+            styleMask: [.titled]
+        )
+        field.frame = NSRect(x: 10, y: 10, width: 600, height: 28)
+        window.contentView?.addSubview(field)
+        window.makeKeyAndOrderFront(nil)
+
+        return (window, field, coordinator, representable)
     }
 
     /// Focus is taken a run-loop cycle after mounting, so wait for it to have
     /// happened rather than for a duration that looked long enough once.
     private func focused(_ field: NSTextField) async -> Bool {
         await eventually { field.currentEditor() != nil }
+    }
+
+    private func ownsFocus(_ field: NSTextField, in window: NSWindow) -> Bool {
+        guard let editor = field.currentEditor() else { return false }
+        return window.firstResponder === editor
     }
 
     // MARK: - What the core decides
@@ -118,11 +168,65 @@ struct CommandBarFocusTests {
 
     @Test("focus is taken once, not stolen back on every redraw")
     func focusIsTakenOnce() async throws {
-        let mounted = mount(text: "")
+        let text = "avelino.run"
+        let mounted = mountWithLatchPrimed(text: text)
         defer { mounted.window.orderOut(nil) }
 
-        #expect(await focused(mounted.field))
+        // The window keys the field and selects what is in it; waiting for
+        // that means nothing asynchronous is left to touch the selection.
+        #expect(
+            await eventually {
+                mounted.field.currentEditor()?.selectedRange.length == text.utf16.count
+            }
+        )
+
+        // Typing narrows the selection to a caret. A redraw that re-took
+        // focus would redo select-all and the next keystroke would wipe the
+        // word — the "it deletes what I am typing" failure, not a detail.
+        mounted.field.currentEditor()?.selectedRange =
+            NSRange(location: text.utf16.count, length: 0)
+        mounted.representable.sync(mounted.field, coordinator: mounted.coordinator)
+
+        // The main queue is FIFO: once a block queued after the sync has
+        // run, anything the sync queued has run too — so the caret below
+        // survived every take the redraw could have armed, not just the
+        // first instants of one.
+        let settled = QueueLatch()
+        DispatchQueue.main.async { settled.run = true }
+        #expect(await eventually { settled.run })
+
+        #expect(
+            mounted.field.currentEditor()?.selectedRange.length == 0,
+            "a redraw re-took focus and re-selected the text mid-typing"
+        )
+        #expect(ownsFocus(mounted.field, in: mounted.window))
         #expect(mounted.coordinator.hasTakenFocus)
+    }
+
+    @Test("reopening find takes focus back after another field wins it")
+    func focusReturnsAfterItIsLost() async throws {
+        let text = "avelino.run"
+        let mounted = mountWithLatchPrimed(text: text)
+        defer { mounted.window.orderOut(nil) }
+
+        // The field owns the keyboard before focus goes elsewhere, or there
+        // is nothing to take back.
+        #expect(
+            await eventually { ownsFocus(mounted.field, in: mounted.window) }
+        )
+
+        let other = NSButton()
+        other.frame = NSRect(x: 10, y: 40, width: 200, height: 24)
+        mounted.window.contentView?.addSubview(other)
+        #expect(mounted.window.makeFirstResponder(other))
+        #expect(await eventually { !ownsFocus(mounted.field, in: mounted.window) })
+
+        mounted.representable.sync(mounted.field, coordinator: mounted.coordinator)
+
+        #expect(
+            await eventually { ownsFocus(mounted.field, in: mounted.window) },
+            "⌘F must reclaim the find field after focus moves elsewhere"
+        )
     }
 
     @Test("escape cancels and enter submits")
@@ -200,6 +304,12 @@ struct CommandBarFocusTests {
 
         #expect(text == "avelino.run")
     }
+}
+
+/// A flag a main-queue block sets, so a test can ask "has the queue reached
+/// this point yet" instead of sleeping for a guess at it.
+final class QueueLatch: @unchecked Sendable {
+    var run = false
 }
 
 /// Where a chosen row lands.

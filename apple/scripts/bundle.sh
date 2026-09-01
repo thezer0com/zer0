@@ -141,6 +141,20 @@ cat >"$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${SHORT_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>15.4</string>
+    <!-- Register both web schemes so macOS can offer zer0 as a browser. The
+         channel-specific bundle id remains the identity; these schemes are
+         the shared capability of stable and canary. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>${RB_BUNDLE_ID}.web</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>http</string>
+                <string>https</string>
+            </array>
+        </dict>
+    </array>
     <!-- Without these two keys, macOS terminates the process the instant a page
          starts capturing. Not a refusal, not an error the page can catch: the
          app disappears. So granting a camera before ADR-0056 added them would

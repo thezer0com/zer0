@@ -306,6 +306,21 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
 
     // MARK: - WKNavigationDelegate
 
+    static func newTabAction(
+        for url: URL?,
+        navigationType: WKNavigationType,
+        commandClick: Bool,
+        shouldDownload: Bool,
+        opener: TabId
+    ) -> Action? {
+        guard navigationType == .linkActivated,
+              commandClick,
+              !shouldDownload,
+              let url
+        else { return nil }
+        return .openTab(space: nil, url: url.absoluteString, parent: opener)
+    }
+
     /// A link carrying `download`, or one WebKit was told to fetch as a file.
     ///
     /// Without this, clicking `<a download href="...">` on a page whose type
@@ -345,6 +360,17 @@ final class HostedWebView: NSObject, WKNavigationDelegate {
         // never be the thing handed to another application (ADR-0092).
         if ExternalScheme.takeOver(navigationAction) {
             decisionHandler(.cancel)
+            return
+        }
+        if let action = Self.newTabAction(
+            for: navigationAction.request.url,
+            navigationType: navigationAction.navigationType,
+            commandClick: navigationAction.modifierFlags.contains(.command),
+            shouldDownload: navigationAction.shouldPerformDownload,
+            opener: tab
+        ) {
+            decisionHandler(.cancel)
+            emit(action)
             return
         }
         // A page belonging to an extension may link to the web, and the view it

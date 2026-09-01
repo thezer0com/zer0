@@ -213,7 +213,7 @@ pub use protocol::{
 };
 pub use reducer::{dispatch, rehydrate};
 pub use routing::{Route, RoutePattern, RoutingTable};
-pub use session::Session;
+pub use session::{ResumeConversation, ResumeTab, Session, SpaceResumeSummary};
 #[cfg(feature = "store")]
 pub use session_store::{SessionStore, StoreError};
 pub use shortcuts::{Binding, Chord, Key, Keymap, Modifiers, UiCommand};

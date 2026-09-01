@@ -103,12 +103,31 @@ pub(crate) fn name_our_pages(session: &mut Session) {
 fn apply(session: &mut Session, action: Action) -> Vec<EngineCommand> {
     match action {
         Action::OpenTab { space, url, parent } => {
-            let space = space.unwrap_or_else(|| session.browser.active_space());
+            let (space, parent_window) = match parent {
+                Some(parent) => {
+                    let Some(parent_tab) = session.browser.tab(parent) else {
+                        return Vec::new();
+                    };
+                    if space.is_some_and(|space| space != parent_tab.space) {
+                        return Vec::new();
+                    }
+                    (parent_tab.space, Some(parent_tab.window))
+                }
+                None => (
+                    space.unwrap_or_else(|| session.browser.active_space()),
+                    None,
+                ),
+            };
             // Every other action validates its SpaceId. Without this, a stale
             // id from a snapshot creates a tab no space owns: invisible in the
             // sidebar, never saved, and with no cookie jar.
             if session.browser.space(space).is_none() {
                 return Vec::new();
+            }
+            // A child belongs beside its parent even when another window or
+            // space became active before this action crossed the host boundary.
+            if let Some(window) = parent_window {
+                session.browser.set_key_window(window);
             }
 
             // Route before creating anything, so a routed URL never briefly

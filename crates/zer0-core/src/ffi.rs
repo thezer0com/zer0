@@ -32,7 +32,7 @@ use crate::preferences::{self, Preferences, SearchEngine};
 use crate::protocol::{Action, EngineCommand, HostCapabilities};
 use crate::reducer;
 use crate::routing::Route;
-use crate::session::Session;
+use crate::session::{Session, SpaceResumeSummary};
 use crate::session_store::SessionStore;
 use crate::shortcuts::{Binding, Chord, UiCommand};
 use crate::site_permissions::{SiteCapability, SiteGrant, SitePermissionPrompt};
@@ -602,6 +602,10 @@ impl Zer0 {
                 .and_then(|tab| state.session.certificate_reports.get(&tab))
                 .cloned(),
         }
+    }
+
+    pub fn space_resume_summary(&self, space: SpaceId) -> SpaceResumeSummary {
+        self.lock().session.space_resume_summary(space)
     }
 
     /// This site's icon in this space, or `None` for one we have nothing for.

@@ -69,7 +69,14 @@ struct CommandBarField: NSViewRepresentable {
         if field.stringValue != text {
             field.stringValue = text
         }
-        guard !coordinator.hasTakenFocus else { return }
+
+        // An ordinary redraw while the person is typing: the field already
+        // owns the keyboard, and taking it again would redo select-all and
+        // eat the next keystroke. Every other sync — the first one, and any
+        // one after the web view or another control has taken the keyboard —
+        // takes focus, so a reopened bar (⌘F, ⌘L again) comes back to the
+        // field instead of waiting for a click.
+        if coordinator.hasTakenFocus, CommandBarField.ownsFocus(field) { return }
         coordinator.hasTakenFocus = true
 
         // A cycle later: at this point the view is in a window but not yet
@@ -77,6 +84,18 @@ struct CommandBarField: NSViewRepresentable {
         DispatchQueue.main.async {
             CommandBarField.takeFocus(of: field)
         }
+    }
+
+    /// Whether the field is what the keyboard types into right now.
+    ///
+    /// AppKit lends every field the same shared editor, so while the field
+    /// is being edited the first responder is that `NSTextView`, never the
+    /// field itself.
+    static func ownsFocus(_ field: NSTextField) -> Bool {
+        guard let editor = field.currentEditor(), let window = field.window else {
+            return false
+        }
+        return window.firstResponder === editor
     }
 
     /// Make `field` first responder and select everything in it.

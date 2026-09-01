@@ -2,6 +2,39 @@ import AppKit
 import SwiftUI
 import Zer0Core
 
+enum SpaceLensGroup: Equatable {
+    case pages(count: Int)
+    case requests(count: Int)
+
+    var heading: String {
+        switch self {
+        case .pages: "PAGES"
+        case .requests: "WAITING FOR YOU"
+        }
+    }
+
+    var count: Int {
+        switch self {
+        case let .pages(count), let .requests(count): count
+        }
+    }
+}
+
+let spaceLensTitle = "BACK TO WORK"
+
+func spaceLensCountLabel(total: Int) -> String {
+    "\(total) loose end\(total == 1 ? "" : "s")"
+}
+
+func spaceLensGroups(for summary: SpaceResumeSummary) -> [SpaceLensGroup] {
+    var groups: [SpaceLensGroup] = []
+    if !summary.tabs.isEmpty { groups.append(.pages(count: summary.tabs.count)) }
+    if !summary.conversations.isEmpty {
+        groups.append(.requests(count: summary.conversations.count))
+    }
+    return groups
+}
+
 /// Vertical tabs, grouped the way Arc groups them: favorites that follow you
 /// everywhere, pinned tabs that belong to the space, and today's tabs that
 /// expire on their own.
@@ -142,6 +175,8 @@ struct Sidebar: View {
             bookmarkShelf
 
             extensionBar
+
+            spaceLens
 
             Divider().hairline().opacity(0.5)
             spaceBar
@@ -1063,6 +1098,152 @@ struct Sidebar: View {
                 .padding(.horizontal, Design.Space.snug)
                 .padding(.vertical, Design.Space.tight)
         }
+    }
+
+    // MARK: - Space Lens
+
+    /// Work the space you are in was interrupted in, offered back: pages whose
+    /// process ended, and threads stopped on a tool nobody has answered.
+    ///
+    /// Beside the space bar because that is what it is about — not this tab,
+    /// not this page, but everything this *space* is holding — and below the
+    /// tab list, which already draws every tab it names. What the lens adds is
+    /// the two things no other row says: that a page is gone, and that
+    /// something is waiting on an answer only a person can give.
+    ///
+    /// **Nothing about it is written down.** The rows are read from the core's
+    /// own summary as this view draws, in the core's own order, so there is no
+    /// second list to keep true and nothing to persist: closing the window
+    /// closes the lens, and a relaunch shows whatever the new session actually
+    /// holds. The section costs nothing when there is nothing in it — not a
+    /// divider, not a heading.
+    @ViewBuilder
+    private var spaceLens: some View {
+        let summary = lensSummary
+        let groups = spaceLensGroups(for: summary)
+        if !groups.isEmpty {
+            Divider().hairline().opacity(0.5)
+
+            VStack(alignment: .leading, spacing: Design.Space.hair) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(spaceLensTitle)
+                        .sectionHeading()
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 0)
+
+                    Text(spaceLensCountLabel(total: groups.reduce(0) { $0 + $1.count }))
+                        .font(Design.Text.micro)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, Design.Space.tight)
+
+                ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                    lensGroup(group, summary: summary)
+                }
+            }
+            .padding(.vertical, Design.Space.tight)
+            // Membership, not content: a row arriving or leaving is the list
+            // making room, and a title changing is not. Keyed the way the
+            // shelf below is keyed on its count, and for the same reason.
+            .motion(.subtle, value: groups.reduce(0) { $0 + $1.count })
+        }
+    }
+
+    @ViewBuilder
+    private func lensGroup(
+        _ group: SpaceLensGroup,
+        summary: SpaceResumeSummary
+    ) -> some View {
+        Text(group.heading)
+            .sectionHeading()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, Design.Space.tight)
+            .padding(.top, Design.Space.tight)
+
+        switch group {
+        case .pages:
+            ForEach(summary.tabs, id: \.id) { tab in
+                lensRow(
+                    subject: model.badge(forHost: URL(string: tab.url ?? "")?.host()),
+                    title: tab.displayTitle,
+                    detail: "Return to page",
+                    help: "Return to the page that stopped responding."
+                ) {
+                    model.activate(tab.id)
+                }
+                .arrivesInList()
+            }
+
+        case .requests:
+            ForEach(summary.conversations, id: \.id) { conversation in
+                lensRow(
+                    subject: model.badge(forHost: URL(string: conversation.page)?.host()),
+                    title: conversation.openingQuestion,
+                    detail: "Answer tool request",
+                    help: "Open the conversation to answer its tool request."
+                ) {
+                    model.send(.showConversation(conversation: conversation.id))
+                }
+                .arrivesInList()
+            }
+        }
+    }
+
+    /// What the lens draws, asked of the core as the lens draws it.
+    ///
+    /// `conversationRevision` is read and thrown away, and it is the only
+    /// reason a consent answered while the lens is open makes its row go away:
+    /// answering one changes no tab and no space, so the snapshot alone would
+    /// leave a row offering a thread that no longer waits. Same pattern and
+    /// same reason as `ChatPage`'s `conversation`.
+    private var lensSummary: SpaceResumeSummary {
+        _ = model.conversationRevision
+        return model.spaceResumeSummary(space: model.activeSpace(in: windowId))
+    }
+
+    /// One offered piece of work: the page it is about, what is holding it,
+    /// and where clicking lands. The badge is the model's answer for that host
+    /// — a thread wears the icon of the page it is about, and a second place
+    /// that worked that out would be a second rule.
+    private func lensRow(
+        subject: SiteBadge.Subject,
+        title: String,
+        detail: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: Design.Space.tight) {
+                SiteBadge(subject: subject)
+                    .frame(width: Shelf.markColumn)
+
+                VStack(alignment: .leading, spacing: Design.Space.line) {
+                    Text(title)
+                        .font(Design.Text.row)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    // The sentence that separates the two kinds of
+                    // interruption, because the badge cannot: a page that
+                    // stopped is somewhere to go back to, a tool that is
+                    // waiting is somebody's decision to make.
+                    Text(detail)
+                        .font(Design.Text.micro)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Design.Space.tight)
+            .padding(.vertical, Design.Space.hair)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .help(help)
+        .accessibilityLabel("\(title), \(detail)")
     }
 
     // MARK: - Spaces
