@@ -1,32 +1,42 @@
 <!--
-  zer0 — the mark.
+  zer0 — the mark, adopted.
 
-  A zero cut on the diagonal, its two halves slipped along the cut like a
-  geological fault. The cut shows up in the outer silhouette before the inner
-  gap becomes visible, which is what keeps it readable once the mark gets too
-  small for the gap to survive.
+  A purple zero cut on the diagonal, its two halves slipped along the cut,
+  with a white "zer" inlaid on the band at the upper right, reading along
+  the cut: zer + the zero itself. One lockup, not a mark beside a wordmark —
+  the letters are placed against the band, not next to it.
 
-  Chosen from six proposals; it started life as gap-2-falha.svg.
+  Adopted from the supplied zer0-logo.svg intake asset (2026-09), then made
+  canonical here and the duplicate removed. Normalisation only dropped the
+  width/height attributes: the geometry is verbatim, control points and all.
+  The supplied curves' control hull grazes about 2u past the frame the file
+  itself declares; the ink runs edge to edge of the viewBox.
 
-  Geometry: an elliptical ring, 80x104 outer and 48x72 inner, centred on
-  128,128, cut at 45 degrees. The gap is 16u and the halves slip 14u along it.
-
-  Known limit: at 32 rendered pixels and below, the cut degrades into a notch
-  and the mark reads as a plain O. Use zer0-small.svg there — it is a redraw,
-  not a scale. Measured, not guessed: at 32px the cut here survives only as a
-  disturbance in the antialiasing, which is the worse failure because it looks
-  deliberate. See ADR-0040.
+  Geometry, measured: the outer ellipse is the full canvas — radii 85 x 99.5
+  on a 170x199 viewBox, centred on 85,99.5 — the inner one ~51 x 66.4, so the
+  ring is ~34u thick. Cut at 45 degrees, gap ~16u, slip ~8u. The inlay spans
+  (133,40)-(161,70), on the band, and is 28u wide — remember that number for
+  the size limit below.
 
   What this file guarantees, and why each rule earns its place:
 
-  - No <text>: a logo that depends on an installed font is not a logo, it is a
-    suggestion. The zero is explicit geometry.
-  - No stroke, transform, mask or clipPath: anything that is not in the path
-    geometry disappears when this is converted to .icns, a favicon or a font.
+  - No <text>: the "zer" is explicit geometry — five subpaths once the e's
+    counter is counted — so no installed font is involved in drawing it.
+  - No stroke, transform, mask or clipPath: anything not in the path geometry
+    disappears when this is converted to .icns, a favicon or a font.
   - No width/height on <svg>: the size belongs to whoever draws it.
-  - fill="currentColor": so does the colour.
+  - Two literal fills, #635BC9 and #FFFFFF: the artwork owns its colour. The
+    old contract's fill="currentColor" assumed a one-ink mark; this one is
+    two, so inheriting ink is no longer a thing it can promise. Consumers
+    that need one ink (the quiet empty states) draw the purple path alone —
+    an inlay in a single-colour band is invisible by construction.
+
+  Known limit: at 32 rendered pixels and below the cut degrades into a notch
+  AND the inlay — 28u of a 170u mark — is five pixels of mush. Use
+  zer0-small.svg there: it drops the inlay and redraws the cut, which is a
+  redraw and not a scale. See ADR-0040.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <path fill="currentColor" fill-rule="evenodd"
-        d="M73.98 190.33L96.84 167.48A48 72 0 0 0 176.03 88.29L200.33 63.98A80 104 0 0 1 73.98 190.33ZM55.67 186.02L79.97 161.71A48 72 0 0 1 159.16 82.52L182.02 59.67A80 104 0 0 0 55.67 186.02Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 199">
+  <path fill="#635BC9" fill-rule="evenodd" clip-rule="evenodd" d="M30.9405 164.396L53.8005 141.546C61.4706 154.684 72.0627 163.193 83.6042 165.488C95.1457 167.782 106.85 163.707 116.537 154.019C126.224 144.332 133.234 129.694 136.261 112.831C139.288 95.968 138.125 78.0294 132.99 62.3561L157.29 38.0461C168.09 59.9701 172.172 86.3625 168.73 112.009C165.287 137.656 154.571 160.691 138.698 176.565C122.824 192.438 102.949 199.995 82.9974 197.742C63.0462 195.489 44.4706 183.59 30.9405 164.396ZM12.6305 160.086L36.9305 135.776C31.7956 120.103 30.6333 102.164 33.6603 85.3011C36.6872 68.4379 43.6969 53.7998 53.384 44.1127C63.0711 34.4256 74.7752 30.3499 86.3167 32.6446C97.8582 34.9393 108.45 43.448 116.12 56.5861L138.98 33.7361C125.45 14.5423 106.875 2.64343 86.9236 0.390393C66.9724 -1.86265 47.0967 5.69397 31.2234 21.5673C15.35 37.4407 4.63352 60.4762 1.19105 86.1229C-2.25142 111.77 1.83054 138.162 12.6305 160.086Z"/>
+  <path fill="white" d="M140.998 67.7467L145.141 63.603L145.997 64.7698L140.552 70.2145L139.654 69.3165L138.268 59.6715L134.464 63.4758L133.432 62.4434L138.664 57.2108L139.583 58.13L140.998 67.7467ZM146.635 57.5274C147.234 58.079 147.816 58.4396 148.381 58.6093C148.942 58.7743 149.473 58.7814 149.972 58.6305C150.467 58.475 150.906 58.2063 151.288 57.8244C151.669 57.4426 151.957 57.0419 152.15 56.6223C152.348 56.1981 152.499 55.7125 152.603 55.1657L153.946 55.392C153.871 56.0142 153.687 56.6271 153.395 57.2305C153.107 57.8291 152.73 58.3618 152.263 58.8285C151.542 59.5498 150.764 60.0023 149.93 60.1862C149.096 60.37 148.254 60.3064 147.406 59.9952C146.557 59.6747 145.749 59.1302 144.98 58.3618C144.226 57.6076 143.691 56.8038 143.375 55.9506C143.059 55.0973 142.977 54.2606 143.128 53.4404C143.278 52.6201 143.684 51.88 144.344 51.22C144.971 50.5931 145.659 50.2018 146.409 50.0462C147.153 49.886 147.919 49.959 148.707 50.2654C149.494 50.5624 150.265 51.088 151.019 51.8423C151.146 51.9696 151.264 52.0921 151.372 52.21C151.476 52.3231 151.566 52.4268 151.641 52.5211L146.635 57.5274ZM145.334 52.1817C144.782 52.7333 144.516 53.3909 144.535 54.1545C144.558 54.9135 144.954 55.729 145.723 56.6011L149.605 52.7191C148.794 51.9366 148.021 51.5123 147.285 51.4463C146.545 51.3756 145.895 51.6207 145.334 52.1817ZM157.554 53.2125L156.642 52.3004L157.802 51.1407L152.18 45.5192L151.02 46.6789L150.108 45.7667L152.173 43.702L154.153 45.2434C153.828 44.3431 153.703 43.5205 153.778 42.7756C153.854 42.0308 154.228 41.3214 154.903 40.6472C155.11 40.4398 155.31 40.2725 155.504 40.1452C155.697 40.0085 155.902 39.8789 156.119 39.7563L156.833 41.1634C156.635 41.2766 156.463 41.3874 156.317 41.4958C156.166 41.5995 156.008 41.7338 155.843 41.8988C155.273 42.4692 154.985 43.1622 154.98 43.9777C154.976 44.7933 155.261 45.7337 155.836 46.7991L158.99 49.9528L160.503 48.4396L161.415 49.3517L157.554 53.2125ZM157.491 43.4191L155.871 41.7998L155.093 40.7816L156.119 39.7563L158.466 42.4433L157.491 43.4191Z"/>
 </svg>

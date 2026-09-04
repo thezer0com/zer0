@@ -54,6 +54,7 @@ struct SiteBadge: View {
 
     let subject: Subject
     var size: CGFloat = 16
+    let onTintedSurface: Bool
 
     var body: some View {
         ZStack {
@@ -111,12 +112,19 @@ struct SiteBadge: View {
     ///
     /// The mark goes through `Zer0MarkGlyph` and not through the `Shape`,
     /// because at this size the canonical drawing is a plain O (ADR-0040).
+    /// Brand ink: the artwork's purple ring stands in for the lockup, the
+    /// inlay being five pixels of mush here — which is still unmistakably
+    /// the browser talking about itself, the thing ADR-0083 asked for.
     @ViewBuilder
     private var ground: some View {
         switch subject {
         case .site: letter
-        case .zer0: Zer0MarkGlyph(side: size)
+        case .zer0: Zer0MarkGlyph(side: size, ink: Self.zer0Ink(onTintedSurface: onTintedSurface))
         }
+    }
+
+    static func zer0Ink(onTintedSurface: Bool) -> Zer0MarkGlyph.Ink {
+        onTintedSurface ? .quiet : .brand
     }
 
     /// The stand-in: a hue owned by the hostname, with its initial on top.

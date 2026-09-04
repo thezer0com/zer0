@@ -114,7 +114,10 @@ struct BookmarkPanel: View {
 
     private var header: some View {
         HStack(spacing: Design.Space.tight) {
-            SiteBadge(subject: model.badge(forHost: kept.bookmark.host))
+            SiteBadge(
+                subject: model.badge(forHost: kept.bookmark.host),
+                onTintedSurface: false
+            )
                 .frame(width: Design.Space.regular)
             VStack(alignment: .leading, spacing: Design.Space.line) {
                 // Says what happened, and says only what is true: a second ⌘D

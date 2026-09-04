@@ -73,6 +73,13 @@ struct Sidebar: View {
         /// Past this the sidebar stops being navigation beside a page and
         /// starts being half the window.
         static let maxWidth: CGFloat = 380
+        static let spaceChipWidth: CGFloat = 64
+
+        static func spaceViewportWidth(availableWidth: CGFloat) -> CGFloat {
+            let unit = spaceChipWidth + Design.Space.hair
+            let count = max(1, Int((availableWidth + Design.Space.hair) / unit))
+            return CGFloat(count) * spaceChipWidth + CGFloat(count - 1) * Design.Space.hair
+        }
     }
 
     @Environment(BrowserModel.self) private var model
@@ -125,9 +132,19 @@ struct Sidebar: View {
     @State private var autoscroll: CGFloat = 0
     @State private var autoscrollTask: Task<Void, Never>?
     @State private var escapeMonitor: Any?
+    private let onNewTabFrame: ((CGRect) -> Void)?
+    private let onScrollOffset: ((CGFloat) -> Void)?
 
-    init(drag: TabDragState = TabDragState()) {
+    init(
+        drag: TabDragState = TabDragState(),
+        scroll: ScrollPosition = ScrollPosition(edge: .top),
+        onNewTabFrame: ((CGRect) -> Void)? = nil,
+        onScrollOffset: ((CGFloat) -> Void)? = nil
+    ) {
         _drag = State(wrappedValue: drag)
+        _scroll = State(wrappedValue: scroll)
+        self.onNewTabFrame = onNewTabFrame
+        self.onScrollOffset = onScrollOffset
     }
 
     /// Frames are read in this space, so a row measured inside the scroll view
@@ -140,10 +157,14 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The window has no title bar, so the traffic lights land here.
-            // Same height as WindowChrome, so the page top does not jump when
-            // the sidebar comes and goes.
-            Color.clear.frame(height: WindowChrome.height)
+            // The header is fixed furniture: the spaces it holds and the
+            // actions under them are reachable at any list length, which is
+            // the whole reason they stopped being a footer under the list —
+            // a control that scrolls away with thirty tabs is a control
+            // somebody has to go digging for.
+            spaceBar
+            headerActions
+            Divider().hairline().opacity(0.5)
 
             // A space is a place, not a filter. Switching one used to swap the
             // list in a single frame, which says "the list refreshed"; keyed on
@@ -156,14 +177,16 @@ struct Sidebar: View {
             // Only the sidebar moves. The page swaps outright, because the
             // thing on the other side of it is a live `WKWebView` and animating
             // one's geometry is how a window switch turns into a stutter.
+            // Nothing above this `ZStack` is keyed on the space, so the header
+            // holds still while the list trades places with itself.
             //
             // A `ZStack` rather than the list sitting directly in the column:
             // mid-transition two lists exist, and stacked vertically they would
-            // ask for twice the height and shove the space bar off the bottom
-            // of the window for the length of the animation. Here they overlap,
-            // which is also what makes the slide read as one list replacing
-            // another rather than two lists queueing. `clipped` keeps the
-            // travelling list inside the sidebar instead of over the page.
+            // ask for twice the height and shove the kept-pages shelf off the
+            // bottom of the window for the length of the animation. Here they
+            // overlap, which is also what makes the slide read as one list
+            // replacing another rather than two lists queueing. `clipped` keeps
+            // the travelling list inside the sidebar instead of over the page.
             ZStack {
                 tabs
                     .id(model.snapshot.activeSpace)
@@ -174,13 +197,9 @@ struct Sidebar: View {
 
             bookmarkShelf
 
-            extensionBar
-
             spaceLens
-
-            Divider().hairline().opacity(0.5)
-            spaceBar
         }
+        .ignoresSafeArea(.container, edges: .top)
         .motion(.entrance, value: model.snapshot.activeSpace)
         // Still a system material, over a surface we own. `.thinMaterial` here
         // sampled the desktop — the sidebar came out the colour of whatever
@@ -266,18 +285,15 @@ struct Sidebar: View {
                     group(model.favoriteTabs(in: windowId), kind: .favorite)
                     group(model.pinnedTabs(in: windowId), kind: .pinned)
                     group(model.todayTabs(in: windowId), kind: .today)
-
-                    // Nothing to drop onto, and it would sit under the pointer
-                    // at the exact moment the list needs to read as a list.
-                    if !drag.isActive {
-                        newTabButton
-                    }
                 }
                 .padding(.horizontal, Design.Space.tight)
                 .padding(.bottom, Design.Space.snug)
                 .onGeometryChange(for: CGFloat.self) {
                     -$0.frame(in: .named(Self.scrollSpace)).minY
-                } action: { scrollOffset = $0 }
+                } action: {
+                    scrollOffset = $0
+                    onScrollOffset?($0)
+                }
             }
             .coordinateSpace(.named(Self.scrollSpace))
             .scrollPosition($scroll)
@@ -305,13 +321,7 @@ struct Sidebar: View {
             message: "Tabs you open in \(model.activeSpace?.name ?? "this space") stay in it, "
                 + "with their own history and their own logins."
         ) {
-            Button {
-                model.openTab()
-            } label: {
-                Label("New Tab", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .help(tip("New Tab", .newTab))
+            EmptyView()
         }
     }
 
@@ -407,7 +417,10 @@ struct Sidebar: View {
             // conversation's row wears the favicon of the page it is about, and
             // a sidebar that worked that out for itself would be the second
             // place that rule lives.
-            SiteBadge(subject: model.badge(for: tab))
+            SiteBadge(
+                subject: model.badge(for: tab),
+                onTintedSurface: isActive || isCompanion
+            )
                 .opacity(tab.loadingComplete ? 1 : 0.4)
 
             Text(tab.displayTitle)
@@ -606,9 +619,10 @@ struct Sidebar: View {
         }
     }
 
-    /// The sidebar's main action, so it is allowed to look like one. It used to
-    /// be tertiary grey: the thing you are most likely to want was the faintest
-    /// thing on screen.
+    /// The sidebar's main action, so it is allowed to look like one. It leads
+    /// the header's second row: fixed, not the last row of the list, so the
+    /// thing you are most likely to want is on screen at any list length —
+    /// it used to be tertiary grey *and* a scroll away.
     private var newTabButton: some View {
         Button {
             model.openTab()
@@ -617,10 +631,12 @@ struct Sidebar: View {
                 Image(systemName: "plus")
                     .font(Design.Text.label.weight(.semibold))
                     // Same width as a SiteBadge, so the label lines up with the
-                    // titles above it rather than nearly lining up.
+                    // titles below it rather than nearly lining up.
                     .frame(width: Design.Space.regular)
-                Text("New Tab").font(Design.Text.rowTitle)
-                Spacer()
+                Text("New Tab")
+                    .font(Design.Text.rowTitle)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, Design.Space.tight)
@@ -632,10 +648,34 @@ struct Sidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressable)
-        .padding(.top, Design.Space.tight)
         .onHover { newTabHovered = $0 }
         .help(tip("New Tab", .newTab))
         .motion(.subtle, value: newTabHovered)
+        .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .named(Self.coordinateSpace))
+        } action: { onNewTabFrame?($0) }
+    }
+
+    // MARK: - Header actions
+
+    /// The header's second row: the sidebar's primary action leading, the
+    /// extensions somebody keeps to hand trailing.
+    ///
+    /// ADR-0068's rule is that an extension button goes wherever the
+    /// sidebar's own controls go, and those controls are these two header
+    /// rows. Nothing else about the row moved with them: the popover still
+    /// opens out to the right (`.maxX`), and with nothing pinned the bar
+    /// draws nothing at all — the row is New Tab's own, not an empty strip
+    /// waiting for something to fill its trailing side.
+    private var headerActions: some View {
+        HStack(spacing: Design.Space.hair) {
+            newTabButton
+                .layoutPriority(1)
+            ExtensionActionBar(ink: .primary, popoverEdge: .maxX)
+                .frame(maxWidth: WindowChrome.Metrics.actionsWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, Design.Space.tight)
+        .padding(.vertical, Design.Space.tight)
     }
 
     // MARK: - Dragging
@@ -868,13 +908,14 @@ struct Sidebar: View {
     /// for. A fixed offset makes the card swim against the cursor, which is a
     /// worse thing to feel than a heading being covered is to look at.
     ///
-    /// The one exception is the space bar: there the card parks above it, so
-    /// the chip it is about to fall into stays visible. The chip is the drop
-    /// indicator in that mode, and the drop indicator is the one thing the card
-    /// never gets to cover.
+    /// The one exception is the spaces row: there the card parks at the top
+    /// of the list, just under the header the chips live in, so the chip it
+    /// is about to fall into stays visible. The chip is the drop indicator
+    /// in that mode, and the drop indicator is the one thing the card never
+    /// gets to cover.
     private var liftedRowY: CGFloat {
         if drag.space != nil, !listFrame.isEmpty {
-            return listFrame.maxY - Design.Space.loose
+            return listFrame.minY + Design.Space.loose
         }
         return drag.pointer.y
     }
@@ -1029,7 +1070,10 @@ struct Sidebar: View {
             model.openBookmark(bookmark, inNewTab: !NSEvent.modifierFlags.contains(.option))
         } label: {
             HStack(spacing: Design.Space.tight) {
-                SiteBadge(subject: model.badge(forHost: bookmark.host))
+                SiteBadge(
+                    subject: model.badge(forHost: bookmark.host),
+                    onTintedSurface: false
+                )
                     .frame(width: Shelf.markColumn)
 
                 VStack(alignment: .leading, spacing: Design.Space.line) {
@@ -1073,31 +1117,6 @@ struct Sidebar: View {
             Button("Remove", role: .destructive) { model.forget(bookmark) }
         }
         .accessibilityLabel(bookmark.displayTitle)
-    }
-
-    // MARK: - Extension buttons
-
-    /// The extensions somebody keeps to hand, above the spaces.
-    ///
-    /// Here rather than over the page, and the argument is ADR-0068's: the
-    /// sidebar's width is already spent, so a row inside it costs the page
-    /// nothing, and it lands beside the space chips because those are the other
-    /// row of small always-available controls — two rows of furniture at the
-    /// bottom, under the list of places, which is the shape this panel already
-    /// had.
-    ///
-    /// Above the divider the space bar already draws, so nothing is added when
-    /// the row is empty: with no extensions pinned this is not a thinner strip,
-    /// it is no strip.
-    @ViewBuilder
-    private var extensionBar: some View {
-        if !model.pinnedExtensions.isEmpty {
-            Divider().hairline().opacity(0.5)
-
-            ExtensionActionBar(ink: .primary, popoverEdge: .maxX)
-                .padding(.horizontal, Design.Space.snug)
-                .padding(.vertical, Design.Space.tight)
-        }
     }
 
     // MARK: - Space Lens
@@ -1215,7 +1234,7 @@ struct Sidebar: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: Design.Space.tight) {
-                SiteBadge(subject: subject)
+                SiteBadge(subject: subject, onTintedSurface: false)
                     .frame(width: Shelf.markColumn)
 
                 VStack(alignment: .leading, spacing: Design.Space.line) {
@@ -1248,29 +1267,46 @@ struct Sidebar: View {
 
     // MARK: - Spaces
 
-    /// Spaces live at the bottom, near the thumb, and read as a set of places
-    /// rather than a list of settings.
+    /// Spaces lead the sidebar — the header's first row, under the traffic
+    /// lights — and read as a set of places rather than a list of settings.
     private var spaceBar: some View {
-        HStack(spacing: Design.Space.hair) {
-            // The chips scroll and the + does not. In one row, six spaces
-            // squeezed every name down to "S…" and pushed the only control that
-            // makes a seventh off the edge of the sidebar.
-            ScrollView(.horizontal) {
-                HStack(spacing: Design.Space.hair) {
-                    ForEach(model.snapshot.spaces, id: \.id) { space in
-                        spaceChip(space)
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-            // Without this the scroll view claims the height it is offered and
-            // the space bar eats the tab list.
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 0) {
+            // The row owns the window strip, but the traffic lights still own
+            // its leading edge.
+            Color.clear.frame(width: WindowChrome.Metrics.trafficLightWidth)
 
-            newSpaceButton
+            GeometryReader { geometry in
+                let availableWidth = geometry.size.width
+                    - Design.Space.hair
+                    - Design.Space.snug
+                    - Design.Space.loose
+                    - Design.Space.hair
+                let viewportWidth = Metrics.spaceViewportWidth(availableWidth: availableWidth)
+
+                HStack(spacing: 0) {
+                    // Whole-chip slots keep overflow from masquerading as a
+                    // broken label while the row remains horizontally scrollable.
+                    ScrollView(.horizontal) {
+                        HStack(spacing: Design.Space.hair) {
+                            ForEach(model.snapshot.spaces, id: \.id) { space in
+                                spaceChip(space)
+                            }
+                        }
+                        .padding(.trailing, Design.Space.tight)
+                    }
+                    .frame(width: max(0, min(availableWidth, viewportWidth)))
+                    .scrollIndicators(.hidden)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: Design.Space.hair)
+                    newSpaceButton
+                }
+                .padding(.leading, Design.Space.hair)
+                .padding(.trailing, Design.Space.snug)
+                .frame(maxHeight: .infinity)
+            }
         }
-        .padding(.horizontal, Design.Space.snug)
-        .padding(.vertical, Design.Space.tight)
+        .frame(height: WindowChrome.height)
     }
 
     private var newSpaceButton: some View {
@@ -1326,6 +1362,7 @@ struct Sidebar: View {
                     // into something in it.
                     Image(systemName: "eye.slash.fill")
                         .font(Design.Text.micro)
+                        .accessibilityHidden(true)
                 }
                 Text(space.name)
                     .font(Design.Text.label.weight(isActive ? .semibold : .regular))
@@ -1338,6 +1375,7 @@ struct Sidebar: View {
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, Design.Space.tight)
             .padding(.vertical, Design.Space.hair)
+            .frame(width: Metrics.spaceChipWidth)
             .background {
                 if isTarget {
                     Capsule().fill(.tint.opacity(0.3))
@@ -1380,6 +1418,9 @@ struct Sidebar: View {
             hoveredSpace = $0 ? space.id : (hoveredSpace == space.id ? nil : hoveredSpace)
         }
         .help(spaceTip(space))
+        .accessibilityLabel(
+            space.profile.ephemeral ? "\(space.name), keeps nothing" : space.name
+        )
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .contextMenu { spaceMenu(space) }
         .popover(isPresented: Binding(

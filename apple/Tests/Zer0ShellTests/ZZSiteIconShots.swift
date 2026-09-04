@@ -206,9 +206,12 @@ private struct RowStrip: View {
 
             ForEach(tabs, id: \.id) { tab in
                 HStack(spacing: Design.Space.tight) {
-                    SiteBadge(subject: icons
-                        ? model.badge(for: tab)
-                        : .site(host: tab.host, icon: nil))
+                    SiteBadge(
+                        subject: icons
+                            ? model.badge(for: tab)
+                            : .site(host: tab.host, icon: nil),
+                        onTintedSurface: false
+                    )
                     Text(tab.displayTitle)
                         .font(Design.Text.row)
                         .lineLimit(1)
@@ -237,7 +240,10 @@ private struct HistoryStrip: View {
                 let host = URL(string: entry.url)?.host()
 
                 HStack(spacing: Design.Space.snug) {
-                    SiteBadge(subject: model.badge(forHost: host))
+                    SiteBadge(
+                        subject: model.badge(forHost: host),
+                        onTintedSurface: false
+                    )
                     VStack(alignment: .leading, spacing: Design.Space.line) {
                         Text(entry.title ?? entry.url).lineLimit(1)
                         Text(entry.url)

@@ -449,4 +449,10 @@ struct SiteBadgeTests {
         _ = SiteBadge.significantPart(of: "localhost")
         #expect(SiteBadge.significantPart(of: nil) == nil)
     }
+
+    @Test("the browser badge yields to a tinted row")
+    func browserBadgeYieldsToATintedRow() {
+        #expect(SiteBadge.zer0Ink(onTintedSurface: false) == .brand)
+        #expect(SiteBadge.zer0Ink(onTintedSurface: true) == .quiet)
+    }
 }

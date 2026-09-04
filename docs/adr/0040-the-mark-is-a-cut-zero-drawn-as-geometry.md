@@ -1,6 +1,6 @@
 # ADR-0040: The mark is a cut zero, drawn as geometry
 
-- **Status:** Accepted
+- **Status:** Accepted, with its one-ink treatment superseded by ADR-0133
 - **Date:** 2026-04-20
 - **Lock:** none — debt
 

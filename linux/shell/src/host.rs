@@ -868,7 +868,7 @@ pub(crate) fn app_for(
     application: &gtk::Application,
     design: &tokens::Tokens,
     dark: bool,
-    mark: &gsk::Path,
+    mark: &tokens::MarkSet<gsk::Path>,
 ) -> Rc<App> {
     let window = gtk::ApplicationWindow::new(application);
     window.set_default_size(1200, 800);
@@ -898,9 +898,7 @@ pub(crate) fn app_for(
     tab_bar.add_css_class("zer0-tabbar");
 
     let appearance = if dark { &design.dark } else { &design.light };
-    // The tokens file guarantees #RRGGBB, which is exactly what RGBA::parse
-    // takes — a parse failure here is a bug in this shell, not input.
-    let mark_color = gdk::RGBA::parse(appearance.ink_tertiary.as_str())
+    let quiet_mark_color = tokens::MarkColor::from_hex(&appearance.ink_tertiary)
         .expect("tokens::color validated #RRGGBB before this was called");
     let bar_color = gdk::RGBA::parse(appearance.accent.as_str())
         .expect("tokens::color validated #RRGGBB before this was called");
@@ -940,7 +938,8 @@ pub(crate) fn app_for(
     empty.set_size_request(-1, design.pane.empty_state_min_height as i32);
     empty.append(&Mark::new(
         mark.clone(),
-        mark_color,
+        tokens::MarkTreatment::Quiet,
+        quiet_mark_color,
         design.glyph.mark as f64,
     ));
     empty.append(&empty_text);
@@ -1286,15 +1285,11 @@ fn chord_text(chord: &Chord) -> String {
     parts.join("+")
 }
 
-/// The zer0 mark, drawn from the SVG's own path data.
+/// The zer0 mark, drawn from the SVG's ordered path layers.
 ///
 /// macOS ports the geometry into a SwiftUI `Shape`; GSK already speaks SVG
-/// path syntax, so this shell parses the `d` attribute straight from
-/// `design/logo/zer0.svg` (ADR-0040's source of truth) and nothing is
-/// transcribed at all — one less copy than the reference shell. The file
-/// carries `fill="currentColor"` for exactly this: the path takes the colour
-/// it is given, here the palette's tertiary ink, quiet on purpose
-/// (DESIGN.md §5).
+/// path syntax, so this shell parses every `d` attribute and its declared fill
+/// straight from `design/logo/zer0.svg` (ADR-0040's source of truth).
 mod mark {
     // A child module cannot see its parent's `use gtk4 as gtk`, and every item
     // below speaks GTK types, so the alias is restated here the way `main.rs`
@@ -1303,12 +1298,12 @@ mod mark {
     use gtk4 as gtk;
     use std::cell::{Cell, OnceCell};
 
-    /// The SVG's own coordinate space (ADR-0040): 256×256.
-    const VIEW_BOX: f64 = 256.0;
+    use crate::tokens;
 
     pub struct Mark {
-        pub(super) path: OnceCell<gsk::Path>,
-        pub(super) color: OnceCell<gdk::RGBA>,
+        pub(super) artwork: OnceCell<tokens::MarkSet<gsk::Path>>,
+        pub(super) treatment: OnceCell<tokens::MarkTreatment>,
+        pub(super) quiet_color: OnceCell<tokens::MarkColor>,
         pub(super) side: Cell<f64>,
     }
 
@@ -1331,8 +1326,9 @@ mod mark {
             // and `super::Mark::new` fills them before the widget can be
             // measured or drawn.
             Self {
-                path: OnceCell::new(),
-                color: OnceCell::new(),
+                artwork: OnceCell::new(),
+                treatment: OnceCell::new(),
+                quiet_color: OnceCell::new(),
                 side: Cell::new(0.0),
             }
         }
@@ -1347,7 +1343,13 @@ mod mark {
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            let (Some(path), Some(color)) = (self.path.get(), self.color.get()) else {
+            let Some(artwork) = self.artwork.get() else {
+                return;
+            };
+            let Some(treatment) = self.treatment.get() else {
+                return;
+            };
+            let Some(quiet_color) = self.quiet_color.get() else {
                 return;
             };
             let instance = self.obj();
@@ -1356,21 +1358,38 @@ mod mark {
             if width <= 0.0 || height <= 0.0 {
                 return;
             }
-            // Centred in whatever it was given, on the SVG's own grid.
-            let scale = (width.min(height) / VIEW_BOX) as f32;
-            let offset_x = ((width as f32 - VIEW_BOX as f32 * scale) / 2.0).max(0.0);
-            let offset_y = ((height as f32 - VIEW_BOX as f32 * scale) / 2.0).max(0.0);
+            let pixels = (width.min(height) * f64::from(instance.scale_factor())).round() as u16;
+            let master = artwork.for_rendered_pixels(pixels);
+            // Centred in whatever it was given, on the selected SVG's own grid.
+            let view_width = f64::from(master.view_box.width);
+            let view_height = f64::from(master.view_box.height);
+            let scale = (width / view_width).min(height / view_height) as f32;
+            let offset_x = ((width as f32 - view_width as f32 * scale) / 2.0).max(0.0);
+            let offset_y = ((height as f32 - view_height as f32 * scale) / 2.0).max(0.0);
             snapshot.save();
             snapshot.translate(&graphene::Point::new(offset_x, offset_y));
             snapshot.scale(scale, scale);
-            snapshot.append_fill(path, gsk::FillRule::EvenOdd, color);
+            for layer in master.layers_for(*treatment) {
+                let fill = treatment.fill(layer.fill, *quiet_color);
+                let color = gdk::RGBA::new(
+                    f32::from(fill.red) / 255.0,
+                    f32::from(fill.green) / 255.0,
+                    f32::from(fill.blue) / 255.0,
+                    1.0,
+                );
+                let fill_rule = match layer.fill_rule {
+                    tokens::MarkFillRule::Winding => gsk::FillRule::Winding,
+                    tokens::MarkFillRule::EvenOdd => gsk::FillRule::EvenOdd,
+                };
+                snapshot.append_fill(&layer.path, fill_rule, &color);
+            }
             snapshot.restore();
         }
     }
 }
 
 glib::wrapper! {
-    /// The mark as a widget: token colour, `Glyph.mark` side, SVG geometry.
+    /// The mark as a widget: SVG layers and colours at the `Glyph.mark` side.
     ///
     /// The three interfaces are not decoration: `WidgetImpl` is only
     /// implementable for a type that carries all of them, because every
@@ -1382,11 +1401,17 @@ glib::wrapper! {
 }
 
 impl Mark {
-    fn new(path: gsk::Path, color: gdk::RGBA, side: f64) -> Self {
+    fn new(
+        artwork: tokens::MarkSet<gsk::Path>,
+        treatment: tokens::MarkTreatment,
+        quiet_color: tokens::MarkColor,
+        side: f64,
+    ) -> Self {
         let widget: Self = glib::Object::new();
         let imp = widget.imp();
-        let _ = imp.path.set(path);
-        let _ = imp.color.set(color);
+        let _ = imp.artwork.set(artwork);
+        let _ = imp.treatment.set(treatment);
+        let _ = imp.quiet_color.set(quiet_color);
         imp.side.set(side);
         widget
     }

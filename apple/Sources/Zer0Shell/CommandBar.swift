@@ -389,7 +389,10 @@ struct CommandBar: View {
     @ViewBuilder
     private func leadingMark(for suggestion: Suggestion, isHighlighted: Bool) -> some View {
         if let host = host(of: suggestion) {
-            SiteBadge(subject: model.badge(forHost: host))
+            SiteBadge(
+                subject: model.badge(forHost: host),
+                onTintedSurface: isHighlighted
+            )
         } else {
             Image(systemName: icon(for: suggestion))
                 // Sized against the title it sits beside rather than left at

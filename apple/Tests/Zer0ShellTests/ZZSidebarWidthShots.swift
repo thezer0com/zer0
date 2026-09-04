@@ -83,6 +83,60 @@ struct ZZSidebarWidthShots {
         }
     }
 
+    @Test(
+        "the sidebar shares the titled window's top strip",
+        .disabled(if: ProcessInfo.processInfo.environment["ZER0_SHOT"] == nil)
+    )
+    @MainActor
+    func theSidebarInATitledWindow() throws {
+        try FileManager.default.createDirectory(
+            at: Self.output, withIntermediateDirectories: true
+        )
+
+        let model = BrowserModel(storagePath: nil)
+        seed(model)
+        let frame = CGRect(x: 0, y: 0, width: Sidebar.Metrics.idealWidth, height: 620)
+        let hosting = NSHostingView(rootView: AnyView(
+            Sidebar()
+                .environment(model)
+                .zer0Palette()
+        ))
+        hosting.frame = frame
+
+        let window = testWindow(
+            frame,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        )
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.contentView = hosting
+        window.claimTheTopForThePage()
+        window.setFrameOrigin(CGPoint(x: 80, y: 80))
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        for dark in [false, true] {
+            let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.appearance = appearance
+            hosting.appearance = appearance
+            hosting.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            let path = Self.output
+                .appending(path: "05-window-ideal-\(dark ? "dark" : "light").png")
+            try capture(window, at: path)
+        }
+    }
+
+    @MainActor
+    private func capture(_ window: NSWindow, at path: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-l", "\(window.windowNumber)", path.path]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0, "screencapture failed for window \(window.windowNumber)")
+    }
+
     /// Pages in all three groups, so every heading is on the board.
     @MainActor
     private func seed(_ model: BrowserModel) {

@@ -228,7 +228,10 @@ struct ChatPage: View {
                 // in words, and a badge doing it in a glyph was the screen
                 // saying it twice while saying which site it was about not at
                 // all.
-                SiteBadge(subject: model.badge(for: conversation))
+                SiteBadge(
+                    subject: model.badge(for: conversation),
+                    onTintedSurface: false
+                )
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(shortPage(page))
@@ -454,7 +457,11 @@ struct ChatPage: View {
             let site = siteName(page)
 
             HStack(spacing: Design.Space.tight) {
-                SiteBadge(subject: model.badge(for: conversation), size: Metrics.identityIcon)
+                SiteBadge(
+                    subject: model.badge(for: conversation),
+                    size: Metrics.identityIcon,
+                    onTintedSurface: false
+                )
 
                 // The name, then the site behind it. The site is dropped when
                 // it is already what the name says, because a row that prints

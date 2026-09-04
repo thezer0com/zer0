@@ -1,6 +1,6 @@
 # ADR-0115: The Swift suite runs in two processes, and the size of each is the decision
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0136
 - **Date:** 2026-08-14
 - **Lock:** none — debt
 

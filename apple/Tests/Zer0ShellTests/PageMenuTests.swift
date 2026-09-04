@@ -32,12 +32,12 @@ struct PageMenuTests {
         ])
     }
 
-    /// A `PageView` that reads the menu and then empties it.
+    /// A `PageView` that reads the menu, empties it, and closes its session.
     ///
-    /// Emptying is what makes the test finish: an engine-built menu tracks
-    /// modally, and a menu with no items ends tracking at once. Watching
-    /// `NSMenu.didBeginTrackingNotification` and cancelling from the handler was
-    /// tried first and hangs — measured, five minutes with no return.
+    /// An engine-built menu tracks modally. Cancelling from `willOpenMenu`
+    /// happens before AppKit enters that tracking loop on macOS 27 and hangs;
+    /// the timer enters the loop, and `didCloseMenu` is the same view's proof
+    /// that AppKit has unwound it. See ADR-0135.
     private final class Watched: PageView {
         /// The engine's menu, as it arrived.
         var engineMenu: [NSMenuItem] = []
@@ -45,27 +45,40 @@ struct PageMenuTests {
         /// `NSResponder` already has one of that name.
         var amendedMenu: [NSMenuItem] = []
         var hitTestWasInHand: [Bool] = []
-        var menus = 0
+        var menusClosed = 0
 
         override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
             hitTestWasInHand.append(sawTargetBeforeTheMenu)
             engineMenu = menu.items
             super.willOpenMenu(menu, with: event)
             amendedMenu = menu.items
-            menus += 1
             // What lets the test finish, and it is `cancelTracking` doing the
-            // work rather than the emptying. Measured: with the items removed
-            // but the session left running, the *first* gesture answered and
-            // the second never produced a menu at all — AppKit swallows a
-            // right-click while a menu session is open, and the failure reads
-            // as "the engine never handed over a menu".
+            // work rather than the emptying. Cancellation is scheduled in the
+            // tracking run loop because doing it before AppKit enters that loop
+            // leaves the menu open indefinitely on macOS 27.
             //
             // Spinning the run loop also clears it, and that was the first
             // version of this. It is the wrong fix: this suite runs five
             // hundred tests on one main actor, and a test that blocks that
             // thread starves every other suite into a wall-clock flake.
             menu.removeAllItems()
-            menu.cancelTracking()
+            let cancellation = Timer(
+                timeInterval: 0.45,
+                target: self,
+                selector: #selector(cancelMenu(_:)),
+                userInfo: menu,
+                repeats: false
+            )
+            RunLoop.main.add(cancellation, forMode: .common)
+        }
+
+        @objc private func cancelMenu(_ timer: Timer) {
+            (timer.userInfo as? NSMenu)?.cancelTracking()
+        }
+
+        override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
+            super.didCloseMenu(menu, with: event)
+            menusClosed += 1
         }
     }
 
@@ -109,7 +122,7 @@ struct PageMenuTests {
         atStart: Bool = false
     ) async throws {
         let spot = try await centre(of: id, in: harness.view, atStart: atStart)
-        let before = harness.view.menus
+        let before = harness.view.menusClosed
         let event = try #require(
             NSEvent.mouseEvent(
                 with: .rightMouseDown,
@@ -126,11 +139,11 @@ struct PageMenuTests {
         harness.view.rightMouseDown(with: event)
 
         #expect(
-            await eventually { harness.view.menus > before },
+            await eventually { harness.view.menusClosed > before },
             """
-            The engine never handed over a menu. `willOpenMenu(_:with:)` is the
-            only route to a WKWebView's context menu on macOS — WKUIDelegate's
-            context-menu methods are iOS-only in this SDK (ADR-0091).
+            The engine-built menu did not complete its tracking lifecycle.
+            `willOpenMenu(_:with:)` and `didCloseMenu(_:with:)` are the opening
+            and closing boundaries this view can observe (ADR-0091, ADR-0135).
             """
         )
     }

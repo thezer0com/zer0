@@ -1,6 +1,6 @@
 # ADR-0014: The vertical sidebar is the primary navigation, and the system toggle goes
 
-- **Status:** Accepted, and its claim to replace bookmarks superseded by ADR-0059
+- **Status:** Accepted, with its claim to replace bookmarks superseded by ADR-0059 and its sidebar composition clauses superseded by ADR-0134
 - **Date:** 2026-02-16
 - **Lock:** `apple/Tests/Zer0ShellTests/ShortcutTests.swift::SidebarToggleTests/visibilityRoundTrips`, `apple/Tests/Zer0ShellTests/SourceRuleTests.swift::PageChromeTests/theSystemSidebarToggleStaysRemoved`, `apple/Tests/Zer0ShellTests/SidebarWidthTests.swift::SidebarWidthTests/theSidebarColumnDeclaresItsFloorToTheWindow`, `apple/Tests/Zer0ShellTests/SidebarWidthTests.swift::SidebarWidthTests/theSidebarIsDrawnNoNarrowerThanItsFloor`
 

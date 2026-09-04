@@ -1,6 +1,6 @@
 # ADR-0068: An extension button lives where the sidebar's own controls live
 
-- **Status:** Accepted, superseding one sentence of ADR-0010
+- **Status:** Accepted, superseding one sentence of ADR-0010 and with its sidebar composition clause superseded by ADR-0134
 - **Date:** 2026-07-27
 - **Lock:** `crates/zer0-core/src/ffi_tests.rs::an_extension_with_no_button_is_never_on_the_row`, `crates/zer0-core/src/ffi_tests.rs::an_extension_that_is_not_running_is_not_on_the_row`, `crates/zer0-core/src/ffi_tests.rs::a_pin_naming_something_no_longer_on_disk_leaves_no_gap`, `crates/zer0-core/src/store_tests.rs::a_pinned_extension_is_still_pinned_after_a_relaunch`, `crates/zer0-core/src/store_tests.rs::an_extension_deliberately_unpinned_stays_unpinned_across_a_relaunch`, `crates/zer0-core/src/store_tests.rs::the_order_of_the_extension_row_survives_a_relaunch`, `crates/zer0-core/src/extension_pins.rs::adopting_never_undoes_a_deliberate_unpinning`, `crates/zer0-core/src/ext/manifest.rs::an_extension_that_declares_no_button_has_none`, `apple/Tests/Zer0ShellTests/ExtensionTests.swift::ExtensionPinTests/pinningSurvivesARelaunch`, `apple/Tests/Zer0ShellTests/ExtensionTests.swift::ExtensionPinTests/anExtensionWithNoActionIsNotOnTheRow`, `apple/Tests/Zer0ShellTests/ExtensionTests.swift::ExtensionPinTests/aMalformedIconDoesNotTakeTheRowDown`, `apple/Tests/Zer0ShellTests/ExtensionTests.swift::ExtensionPinTests/perTabStateFollowsTheTab`
 

@@ -27,9 +27,9 @@ public struct AboutView: View {
         let engine = Self.runningEngine
         return VStack(spacing: Design.Space.loose) {
             // The mark's other home, and the one place it is allowed to be the
-            // loudest thing on screen.
-            Zer0MarkGlyph(side: Design.Glyph.mark)
-                .foregroundStyle(.tint)
+            // loudest thing on screen: drawn as the artwork, purple ring and
+            // white inlay, at the one size that can carry the whole lockup.
+            Zer0MarkGlyph(side: Design.Glyph.mark, ink: .brand)
 
             VStack(spacing: Design.Space.tight) {
                 Text("zer0")

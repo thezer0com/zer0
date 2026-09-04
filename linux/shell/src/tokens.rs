@@ -12,7 +12,10 @@
 //! the source. [`css`] is the other discipline: it emits classes for what the
 //! shell actually draws, so no rule exists unworn.
 
-use std::path::{Path, PathBuf};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 use toml_edit::DocumentMut;
 
@@ -245,37 +248,343 @@ fn tokens_path() -> Result<PathBuf, String> {
     }
 }
 
-/// The zer0 mark's geometry, from the SVG that owns it — `design/logo/zer0.svg`,
-/// the source of truth ADR-0040 names. Derived from the same walk as the
-/// tokens: whatever directory holds the TOML holds the logo, so there is one
-/// search, one artifact, and no second truth to drift.
-pub fn mark_path_data() -> Result<String, String> {
-    let svg_path = tokens_path()?
-        .parent()
-        .ok_or_else(|| "design/tokens.toml has no parent directory".to_string())?
-        .join("logo")
-        .join("zer0.svg");
-    let svg = std::fs::read_to_string(&svg_path)
-        .map_err(|e| format!("could not read {}: {e}", svg_path.display()))?;
-    path_data(&svg, &svg_path)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkViewBox {
+    pub width: u16,
+    pub height: u16,
 }
 
-/// The one attribute this shell reads from the one file whose shape it knows:
-/// a scan for ` d="…"`, not an XML parser — an XML dependency for one string
-/// is ceremony, and any miss refuses rather than guesses.
-fn path_data(svg: &str, name: &Path) -> Result<String, String> {
-    let start = svg
-        .find(" d=\"")
-        .ok_or_else(|| format!("{} carries no path data (no ` d=\"…\"`)", name.display()))?;
-    let rest = &svg[start + 4..];
-    let end = rest
-        .find('"')
-        .ok_or_else(|| format!("{} has an unterminated path data attribute", name.display()))?;
-    let data = &rest[..end];
-    if data.is_empty() {
-        return Err(format!("{} has empty path data", name.display()));
+const MAX_MARK_BYTES: usize = 64 * 1024;
+const MAX_MARK_LAYERS: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl MarkColor {
+    pub fn from_hex(value: &str) -> Option<Self> {
+        let looks_like_hex = value.len() == 7
+            && value.starts_with('#')
+            && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit());
+        looks_like_hex.then(|| Self {
+            red: u8::from_str_radix(&value[1..3], 16).expect("hex shape was checked"),
+            green: u8::from_str_radix(&value[3..5], 16).expect("hex shape was checked"),
+            blue: u8::from_str_radix(&value[5..7], 16).expect("hex shape was checked"),
+        })
     }
-    Ok(data.to_string())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkFillRule {
+    Winding,
+    EvenOdd,
+}
+
+#[derive(Clone)]
+pub struct MarkLayer<P> {
+    pub path: P,
+    pub fill: MarkColor,
+    pub fill_rule: MarkFillRule,
+}
+
+#[derive(Clone)]
+pub struct Mark<P> {
+    pub view_box: MarkViewBox,
+    pub layers: Vec<MarkLayer<P>>,
+}
+
+#[derive(Clone)]
+pub struct MarkSet<P> {
+    pub canonical: Mark<P>,
+    pub hinted: Mark<P>,
+}
+
+impl<P> MarkSet<P> {
+    pub fn for_rendered_pixels(&self, pixels: u16) -> &Mark<P> {
+        if pixels <= 32 {
+            &self.hinted
+        } else {
+            &self.canonical
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkTreatment {
+    Quiet,
+    Brand,
+}
+
+impl MarkTreatment {
+    pub fn fill(self, artwork: MarkColor, quiet: MarkColor) -> MarkColor {
+        match self {
+            Self::Quiet => quiet,
+            Self::Brand => artwork,
+        }
+    }
+}
+
+impl<P> Mark<P> {
+    pub fn layers_for(&self, treatment: MarkTreatment) -> &[MarkLayer<P>] {
+        match treatment {
+            MarkTreatment::Quiet => &self.layers[..self.layers.len().min(1)],
+            MarkTreatment::Brand => &self.layers,
+        }
+    }
+}
+
+/// The zer0 mark, from the SVG that owns its geometry and colour.
+pub fn mark() -> Result<MarkSet<String>, String> {
+    let logo_dir = tokens_path()?
+        .parent()
+        .ok_or_else(|| "design/tokens.toml has no parent directory".to_string())?
+        .join("logo");
+    Ok(MarkSet {
+        canonical: mark_from_path(&logo_dir.join("zer0.svg"))?,
+        hinted: mark_from_path(&logo_dir.join("zer0-small.svg"))?,
+    })
+}
+
+fn mark_from_path(path: &Path) -> Result<Mark<String>, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take((MAX_MARK_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    if bytes.len() > MAX_MARK_BYTES {
+        return Err(format!("{} exceeds {MAX_MARK_BYTES} bytes", path.display()));
+    }
+    let svg = String::from_utf8(bytes)
+        .map_err(|error| format!("{} is not UTF-8: {error}", path.display()))?;
+    mark_from_str(&svg, path)
+}
+
+fn mark_from_str(svg: &str, name: &Path) -> Result<Mark<String>, String> {
+    if svg.len() > MAX_MARK_BYTES {
+        return Err(format!("{} exceeds {MAX_MARK_BYTES} bytes", name.display()));
+    }
+    let document = after_markup_padding(svg, name)?;
+    if !document.starts_with("<svg")
+        || !document[4..]
+            .chars()
+            .next()
+            .is_some_and(|next| next == '>' || next.is_whitespace())
+    {
+        return Err(format!("{} carries no `<svg>` root", name.display()));
+    }
+    let root_start = svg.len() - document.len();
+    let root_end = document
+        .find('>')
+        .map(|offset| root_start + offset)
+        .ok_or_else(|| format!("{} has an unterminated `<svg>` root", name.display()))?;
+    let closing = svg[root_end + 1..]
+        .find("</svg>")
+        .map(|offset| root_end + 1 + offset)
+        .ok_or_else(|| format!("{} carries no closing `</svg>`", name.display()))?;
+    markup_padding(&svg[..root_start], name)?;
+    markup_padding(&svg[closing + 6..], name)?;
+    let root = &svg[root_start..=root_end];
+    validate_attributes(root, "<svg", &["xmlns", "viewBox"], name)?;
+    let view_box = parse_view_box(root, name)?;
+    let body = &svg[root_end + 1..closing];
+    let mut layers = Vec::new();
+    let mut cursor = 0;
+    while let Some(offset) = body[cursor..].find("<path") {
+        let start = cursor + offset;
+        markup_padding(&body[cursor..start], name)?;
+        let after_name = body[start + 5..].chars().next();
+        if !after_name.is_some_and(char::is_whitespace) {
+            return Err(format!(
+                "{} has a malformed `<path>` element",
+                name.display()
+            ));
+        }
+        let end = body[start..]
+            .find("/>")
+            .map(|offset| start + offset + 2)
+            .ok_or_else(|| format!("{} has an unterminated `<path>` element", name.display()))?;
+        let tag = &body[start..end];
+        validate_attributes(tag, "<path", &["d", "fill", "fill-rule", "clip-rule"], name)?;
+        if layers.len() == MAX_MARK_LAYERS {
+            return Err(format!(
+                "{} carries more than {MAX_MARK_LAYERS} path layers",
+                name.display()
+            ));
+        }
+        let path = required_attribute(tag, "d", name)?.to_string();
+        let fill = parse_mark_color(required_attribute(tag, "fill", name)?, name)?;
+        let fill_rule = match optional_attribute(tag, "fill-rule", name)? {
+            None | Some("nonzero") => MarkFillRule::Winding,
+            Some("evenodd") => MarkFillRule::EvenOdd,
+            Some(value) => {
+                return Err(format!(
+                    "{} has unsupported path fill-rule {value:?}",
+                    name.display()
+                ));
+            }
+        };
+        layers.push(MarkLayer {
+            path,
+            fill,
+            fill_rule,
+        });
+        cursor = end;
+    }
+    markup_padding(&body[cursor..], name)?;
+    if layers.is_empty() {
+        return Err(format!("{} carries no `<path>` layers", name.display()));
+    }
+    Ok(Mark { view_box, layers })
+}
+
+fn validate_attributes(
+    tag: &str,
+    element: &str,
+    allowed: &[&str],
+    name: &Path,
+) -> Result<(), String> {
+    let mut rest = tag
+        .strip_prefix(element)
+        .ok_or_else(|| format!("{} has a malformed {element} element", name.display()))?;
+    let mut seen = Vec::new();
+    loop {
+        rest = rest.trim_start();
+        if rest == ">" || rest == "/>" {
+            return Ok(());
+        }
+        let equals = rest
+            .find('=')
+            .ok_or_else(|| format!("{} has a malformed {element} attribute", name.display()))?;
+        let attribute = &rest[..equals];
+        if attribute.is_empty() || attribute.chars().any(char::is_whitespace) {
+            return Err(format!(
+                "{} has a malformed {element} attribute",
+                name.display()
+            ));
+        }
+        if !allowed.contains(&attribute) || seen.contains(&attribute) {
+            return Err(format!(
+                "{} has unsupported or duplicate {element} attribute {attribute:?}",
+                name.display()
+            ));
+        }
+        seen.push(attribute);
+        let quoted = rest[equals + 1..]
+            .strip_prefix('"')
+            .ok_or_else(|| format!("{} has a non-double-quoted attribute", name.display()))?;
+        let end = quoted
+            .find('"')
+            .ok_or_else(|| format!("{} has an unterminated attribute", name.display()))?;
+        rest = &quoted[end + 1..];
+    }
+}
+
+fn markup_padding(mut value: &str, name: &Path) -> Result<(), String> {
+    value = after_markup_padding(value, name)?;
+    if value.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} has unsupported SVG content", name.display()))
+    }
+}
+
+fn after_markup_padding<'a>(mut value: &'a str, name: &Path) -> Result<&'a str, String> {
+    loop {
+        value = value.trim_start();
+        if value.is_empty() {
+            return Ok(value);
+        }
+        let Some(comment) = value.strip_prefix("<!--") else {
+            return Ok(value);
+        };
+        let end = comment
+            .find("-->")
+            .ok_or_else(|| format!("{} has an unterminated comment", name.display()))?;
+        value = &comment[end + 3..];
+    }
+}
+
+fn parse_view_box(root: &str, name: &Path) -> Result<MarkViewBox, String> {
+    let value = required_attribute(root, "viewBox", name)?;
+    let mut parts = value.split_ascii_whitespace();
+    let x = parts.next();
+    let y = parts.next();
+    let width = parts.next().and_then(|part| part.parse::<u16>().ok());
+    let height = parts.next().and_then(|part| part.parse::<u16>().ok());
+    if x != Some("0") || y != Some("0") || parts.next().is_some() {
+        return Err(format!(
+            "{} has unsupported viewBox {value:?}; expected `0 0 width height`",
+            name.display()
+        ));
+    }
+    match (width, height) {
+        (Some(width), Some(height)) if width > 0 && height > 0 => Ok(MarkViewBox { width, height }),
+        (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) | (None, None) => Err(format!(
+            "{} has invalid viewBox dimensions in {value:?}",
+            name.display()
+        )),
+    }
+}
+
+fn required_attribute<'a>(tag: &'a str, attribute: &str, name: &Path) -> Result<&'a str, String> {
+    optional_attribute(tag, attribute, name)?.ok_or_else(|| {
+        format!(
+            "{} is missing required {attribute:?} attribute",
+            name.display()
+        )
+    })
+}
+
+fn optional_attribute<'a>(
+    tag: &'a str,
+    attribute: &str,
+    name: &Path,
+) -> Result<Option<&'a str>, String> {
+    let prefix = format!(" {attribute}=");
+    let Some(start) = tag.find(&prefix) else {
+        return Ok(None);
+    };
+    let rest = &tag[start + prefix.len()..];
+    let quoted = rest.strip_prefix('"').ok_or_else(|| {
+        format!(
+            "{} has a non-double-quoted {attribute:?} attribute",
+            name.display()
+        )
+    })?;
+    let end = quoted.find('"').ok_or_else(|| {
+        format!(
+            "{} has an unterminated {attribute:?} attribute",
+            name.display()
+        )
+    })?;
+    let value = &quoted[..end];
+    if value.is_empty() {
+        return Err(format!(
+            "{} has an empty {attribute:?} attribute",
+            name.display()
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn parse_mark_color(value: &str, name: &Path) -> Result<MarkColor, String> {
+    if value == "white" {
+        return Ok(MarkColor {
+            red: u8::MAX,
+            green: u8::MAX,
+            blue: u8::MAX,
+        });
+    }
+    MarkColor::from_hex(value).ok_or_else(|| {
+        format!(
+            "{} has unsupported path fill {value:?}; expected `white` or `#RRGGBB`",
+            name.display()
+        )
+    })
 }
 
 fn color(document: &DocumentMut, appearance: &str, key: &str) -> Result<String, String> {
@@ -669,6 +978,8 @@ mod tests {
     // The real artifact, at compile time: testing against a hand-typed TOML
     // would be the second copy ADR-0117 exists to prevent.
     const REAL: &str = include_str!("../../../design/tokens.toml");
+    const SUPPLIED_MARK: &str = include_str!("../../../design/logo/zer0.svg");
+    const SUPPLIED_HINTED_MARK: &str = include_str!("../../../design/logo/zer0-small.svg");
 
     #[test]
     fn the_real_tokens_parse() {
@@ -732,15 +1043,182 @@ mod tests {
     }
 
     #[test]
-    fn the_mark_path_data_is_extracted_and_a_miss_refuses() {
-        let data = path_data(
-            "<svg><path fill=\"currentColor\" d=\"M1 2L3 4Z\"/></svg>",
+    fn the_supplied_mark_keeps_layers_in_source_order() {
+        let mark = mark_from_str(SUPPLIED_MARK, Path::new("design/logo/zer0.svg"))
+            .expect("the supplied mark must load");
+
+        assert_eq!(
+            mark.view_box,
+            MarkViewBox {
+                width: 170,
+                height: 199
+            }
+        );
+        assert_eq!(mark.layers.len(), 2);
+        assert!(mark.layers[0].path.starts_with("M30.9405"));
+        assert!(mark.layers[1].path.starts_with("M140.998"));
+        assert_eq!(mark.layers[0].fill_rule, MarkFillRule::EvenOdd);
+        assert_eq!(mark.layers[1].fill_rule, MarkFillRule::Winding);
+    }
+
+    #[test]
+    fn the_supplied_mark_keeps_declared_fills() {
+        let mark = mark_from_str(SUPPLIED_MARK, Path::new("design/logo/zer0.svg"))
+            .expect("the supplied mark must load");
+
+        assert_eq!(
+            mark.layers[0].fill,
+            MarkColor {
+                red: 0x63,
+                green: 0x5b,
+                blue: 0xc9,
+            }
+        );
+        assert_eq!(
+            mark.layers[1].fill,
+            MarkColor {
+                red: u8::MAX,
+                green: u8::MAX,
+                blue: u8::MAX,
+            }
+        );
+    }
+
+    #[test]
+    fn the_quiet_mark_draws_only_the_zero() {
+        let mark = mark_from_str(SUPPLIED_MARK, Path::new("zer0.svg"))
+            .expect("the supplied mark must load");
+
+        let layers = mark.layers_for(MarkTreatment::Quiet);
+        let quiet = MarkColor {
+            red: 0x72,
+            green: 0x70,
+            blue: 0x79,
+        };
+
+        assert_eq!(layers.len(), 1);
+        assert_eq!(MarkTreatment::Quiet.fill(layers[0].fill, quiet), quiet);
+    }
+
+    #[test]
+    fn the_brand_mark_keeps_the_complete_lockup() {
+        let mark = mark_from_str(SUPPLIED_MARK, Path::new("zer0.svg"))
+            .expect("the supplied mark must load");
+
+        let layers = mark.layers_for(MarkTreatment::Brand);
+
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[0].fill, mark.layers[0].fill);
+        assert_eq!(layers[1].fill, mark.layers[1].fill);
+    }
+
+    #[test]
+    fn small_renderings_select_the_hinted_master() {
+        let marks = MarkSet {
+            canonical: mark_from_str(SUPPLIED_MARK, Path::new("zer0.svg"))
+                .expect("the supplied mark must load"),
+            hinted: mark_from_str(SUPPLIED_HINTED_MARK, Path::new("zer0-small.svg"))
+                .expect("the supplied hinted mark must load"),
+        };
+
+        assert_eq!(marks.for_rendered_pixels(16).layers.len(), 1);
+        assert_eq!(marks.for_rendered_pixels(32).layers.len(), 1);
+        assert_eq!(marks.for_rendered_pixels(33).layers.len(), 2);
+    }
+
+    #[test]
+    fn unsupported_svg_content_refuses() {
+        let error = mark_from_str(
+            "<svg viewBox=\"0 0 1 1\"><circle/><path d=\"M0 0Z\" fill=\"white\"/></svg>",
             Path::new("zer0.svg"),
         )
-        .expect("the d attribute is present");
-        assert_eq!(data, "M1 2L3 4Z");
-        let error = path_data("<svg><circle/></svg>", Path::new("zer0.svg"))
-            .expect_err("a file without path data must refuse");
-        assert!(error.contains("no path data"), "{error}");
+        .err()
+        .expect("an unsupported element must refuse");
+
+        assert!(error.contains("unsupported SVG content"), "{error}");
+    }
+
+    #[test]
+    fn unsupported_svg_attributes_refuse() {
+        let error = mark_from_str(
+            "<svg viewBox=\"0 0 1 1\"><path d=\"M0 0Z\" fill=\"white\" transform=\"scale(2)\"/></svg>",
+            Path::new("zer0.svg"),
+        )
+        .err()
+        .expect("an unsupported attribute must refuse");
+
+        assert!(error.contains("unsupported or duplicate"), "{error}");
+    }
+
+    #[test]
+    fn a_path_without_a_fill_refuses() {
+        let error = mark_from_str(
+            "<svg viewBox=\"0 0 1 1\"><path d=\"M0 0Z\"/></svg>",
+            Path::new("zer0.svg"),
+        )
+        .err()
+        .expect("a missing fill must refuse");
+
+        assert!(error.contains("missing required \"fill\""), "{error}");
+    }
+
+    #[test]
+    fn a_current_color_fill_refuses() {
+        let error = mark_from_str(
+            "<svg viewBox=\"0 0 1 1\"><path d=\"M0 0Z\" fill=\"currentColor\"/></svg>",
+            Path::new("zer0.svg"),
+        )
+        .err()
+        .expect("an inherited fill must refuse");
+
+        assert!(error.contains("unsupported path fill"), "{error}");
+    }
+
+    #[test]
+    fn an_unterminated_path_refuses() {
+        let error = mark_from_str(
+            "<svg viewBox=\"0 0 1 1\"><path d=\"M0 0Z\" fill=\"white\"></svg>",
+            Path::new("zer0.svg"),
+        )
+        .err()
+        .expect("a malformed path must refuse");
+
+        assert!(error.contains("unterminated `<path>`"), "{error}");
+    }
+
+    #[test]
+    fn a_missing_view_box_refuses() {
+        let error = mark_from_str(
+            "<svg><path d=\"M0 0Z\" fill=\"white\"/></svg>",
+            Path::new("zer0.svg"),
+        )
+        .err()
+        .expect("a missing viewBox must refuse");
+
+        assert!(error.contains("missing required \"viewBox\""), "{error}");
+    }
+
+    #[test]
+    fn an_oversized_mark_refuses() {
+        let svg = format!(
+            "{}<svg viewBox=\"0 0 1 1\"><path d=\"M0 0Z\" fill=\"white\"/></svg>",
+            " ".repeat(64 * 1024)
+        );
+        let error = mark_from_str(&svg, Path::new("zer0.svg"))
+            .err()
+            .expect("an oversized mark must refuse before parsing");
+
+        assert!(error.contains("exceeds 65536 bytes"), "{error}");
+    }
+
+    #[test]
+    fn a_mark_with_too_many_layers_refuses() {
+        let paths = "<path d=\"M0 0Z\" fill=\"white\"/>".repeat(17);
+        let svg = format!("<svg viewBox=\"0 0 1 1\">{paths}</svg>");
+        let error = mark_from_str(&svg, Path::new("zer0.svg"))
+            .err()
+            .expect("a mark with too many layers must refuse");
+
+        assert!(error.contains("more than 16 path layers"), "{error}");
     }
 }

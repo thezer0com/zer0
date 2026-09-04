@@ -82,10 +82,20 @@ struct ZZExtensionBarShots {
             encoding: .utf8
         )
 
+        let overflow = try ExtensionFixture(
+            id: String(repeating: "d", count: 32),
+            name: "Overflow fixture",
+            in: extensions
+        )
+
         let model = BrowserModel(
             storagePath: profile.appending(path: "session.sqlite").path
         )
         model.loadInstalledExtensions()
+        guard model.installedExtensions.contains(where: { $0.id == overflow.installed.id }) else {
+            Issue.record("the overflow fixture was not loaded")
+            return nil
+        }
 
         // Granted what each asked for, because nothing gets a button until it
         // is running (ADR-0028, ADR-0068).
@@ -113,14 +123,23 @@ struct ZZExtensionBarShots {
             Issue.record("the visual fixture did not produce an unread extension off the row")
             return nil
         }
+        seedOverflowingTabs(model)
         return (model, model.installedExtensions)
     }
 
-    /// The row on the sidebar's own surface, over a page, in both themes.
-    ///
-    /// Drawn with the space bar under it, because the whole placement argument
-    /// is that these two rows read as one band of furniture at the bottom of the
-    /// panel. Seen on its own it proves nothing about that.
+    private func seedOverflowingTabs(_ model: BrowserModel) {
+        for index in 0..<40 {
+            model.send(.openTab(space: nil, url: nil, parent: nil))
+            guard let tab = model.snapshot.activeTab else { continue }
+            model.send(.navigationCommitted(tab: tab, url: "https://example.org/\(index)"))
+            model.send(.titleChanged(tab: tab, title: "Scrolled page \(index)"))
+            model.send(.navigationFinished(tab: tab))
+        }
+    }
+
+    /// The row on the sidebar's own surface, in both themes and at both ends of
+    /// its horizontal overflow. The full sidebar capture below is the placement
+    /// evidence; these close boards make target size and scrolling visible.
     @Test(
         "the extension row, with a real package's icon",
         .disabled(if: ProcessInfo.processInfo.environment["ZER0_SHOT"] == nil)
@@ -150,34 +169,33 @@ struct ZZExtensionBarShots {
         }
 
         for dark in [false, true] {
-            let shot = Shot(size: CGSize(width: 260, height: 200)) {
-                ZStack {
-                    // A gradient behind it, so a material has something to be
-                    // translucent about and a flat fill cannot pass for one.
-                    LinearGradient(
-                        colors: dark
-                            ? [.black, Color(red: 0.10, green: 0.11, blue: 0.18)]
-                            : [.white, Color(red: 0.93, green: 0.93, blue: 0.97)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    VStack {
-                        Spacer()
-                        ExtensionActionBar(ink: .primary, popoverEdge: .maxX)
-                            .padding(.horizontal, Design.Space.snug)
-                            .padding(.vertical, Design.Space.tight)
-                    }
-                    .chromeSurface()
+            for (position, scroll) in [
+                ("start", ScrollPosition(edge: .leading)),
+                ("end", ScrollPosition(x: 1_000)),
+            ] {
+                let shot = Shot(size: CGSize(width: 110, height: 60)) {
+                    ExtensionActionBar(ink: .primary, popoverEdge: .maxX, scroll: scroll)
+                        .padding(Design.Space.tight)
+                        .chromeSurface()
+                        .environment(model)
+                        .environment(\.colorScheme, dark ? .dark : .light)
+                        // An offscreen window never becomes key, so without this every
+                        // accent and every selected surface rasterises grey and judging
+                        // one measures nothing.
+                        .environment(\.controlActiveState, .key)
+                        .zer0Palette()
                 }
-                .environment(model)
-                .environment(\.colorScheme, dark ? .dark : .light)
-                // An offscreen window never becomes key, so without this every
-                // accent and every selected surface rasterises grey and judging
-                // one measures nothing.
-                .environment(\.controlActiveState, .key)
-                .zer0Palette()
+                shot.write("extension-bar-\(position)-\(dark ? "dark" : "light")")
             }
-            shot.write("extension-bar-\(dark ? "dark" : "light")")
+
+            let sidebar = Shot(size: CGSize(width: Sidebar.Metrics.minWidth, height: 620)) {
+                Sidebar(scroll: ScrollPosition(y: 700))
+                    .environment(model)
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                    .environment(\.controlActiveState, .key)
+                    .zer0Palette()
+            }
+            sidebar.write("sidebar-extension-header-\(dark ? "dark" : "light")")
         }
     }
 }

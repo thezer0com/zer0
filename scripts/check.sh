@@ -29,7 +29,7 @@ echo "==> adr"
 # So the rule is not "no harnesses", it is "a harness is opt-in". Run one with
 # ZER0_SHOT=1 swift test --filter ZZ.
 echo "==> harnesses are opt-in"
-for harness in $(find apple/Tests -name 'ZZ*.swift' 2>/dev/null); do
+while IFS= read -r harness; do
 	# Every @Test in the file must carry the gate. One ungated case is enough
 	# to slow every run, so counting is the check.
 	tests=$(grep -c '@Test' "$harness" || true)
@@ -41,7 +41,7 @@ for harness in $(find apple/Tests -name 'ZZ*.swift' 2>/dev/null); do
 		echo '    .disabled(if: ProcessInfo.processInfo.environment["ZER0_SHOT"] == nil)' >&2
 		exit 1
 	fi
-done
+done < <(find apple/Tests -name 'ZZ*.swift' -print 2>/dev/null)
 
 # Also before the compilers, and for the same reason as the record: a test that
 # names a path another test also means does not fail where the mistake is. It
@@ -62,6 +62,12 @@ echo "==> sf symbol budget"
 # the other is a red build here, not two platforms drifting apart quietly.
 echo "==> design tokens"
 ./scripts/token-check.sh
+
+# The icon pipeline extracts path elements from a shared SVG source. Keep its
+# comment handling behind a cheap fixture so disabled artwork cannot silently
+# return to the generated app icon.
+echo "==> app icon source"
+bash ./apple/scripts/test-make-icon.sh
 
 # Also cheap, also before the compilers: version.txt is the one place a WebKit
 # revision is written down, and common.sh plus three workflows parse it as
@@ -98,7 +104,36 @@ if [[ "$(uname)" == "Darwin" ]]; then
 	echo "==> swift build"
 	./apple/scripts/build-core.sh
 	export ZER0_RUST_PROFILE=debug
-	# The suite runs in two processes, and the second list is what decides the
+	# Engine-built menus leave process-scoped AppKit state behind on macOS 27.
+	# Discover every case rather than maintain a second list, then give each one
+	# the clean helper its lifecycle requires (ADR-0135).
+	run_page_menu_tests() {
+		local page_menu_tests test test_filter output completed
+		if ! page_menu_tests="$(swift test list | grep '^Zer0ShellTests\.PageMenuTests/')"; then
+			echo "error: swift test list found no PageMenuTests" >&2
+			return 1
+		fi
+		while IFS= read -r test; do
+			echo "==> swift test ($test)"
+			# SwiftPM lists target/suite/method(), but its filter only matches the
+			# method token as a substring. The completion count below is the second
+			# half of this lock: a collision must fail rather than run two cases.
+			test_filter="${test##*/}"
+			test_filter="${test_filter%()}"
+			if ! output="$(swift test --skip-build --filter "$test_filter" 2>&1)"; then
+				printf '%s\n' "$output"
+				return 1
+			fi
+			printf '%s\n' "$output"
+			completed="$(grep -c 'Test run with 1 test in 1 suite passed after' <<<"$output" || true)"
+			if ((completed != 1)); then
+				echo "error: $test did not record exactly one completed test" >&2
+				return 1
+			fi
+		done <<<"$page_menu_tests"
+	}
+
+	# The shared suite runs in measured process groups whose lists decide the
 	# split. Measured on macOS 27.0 beta 5 (installed 2026-08-14, the day this
 	# broke): one WebContent process receiving a sibling's IPC teardown dies
 	# with EXC_ARM_PAC_FAIL inside IPC::Connection::dispatchDidCloseAndInvalidate
@@ -126,13 +161,65 @@ if [[ "$(uname)" == "Darwin" ]]; then
 	# not the machine: grow the second list." The fragile end-to-end victims
 	# moved here; PageProcessTests — the trigger — stays in run one, whose
 	# mesh is now the smaller one for it.
-	readonly HEAVY='DownloadEndToEndTests|DownloadResumeTests|EnginePolicyTests|NavigationRoundTripTests|NavigationStateTests|ExtensionApiTests|ExtensionPageTests|ExtensionHostTests|ExtensionDownloadRefusalTests|InstallOfferTests|ExtensionCompatTests|ExtensionStatusTests|ExtensionTabTests|ExtensionConsentTests|ExtensionConsentScrollTests|ExtensionPinTests|ExtensionPopupDialogTests|StoreInstallButtonStateTests|StoreInstallFallbackTests|StoreInstallHostRuleTests|StoreInstallMessageTests|StoreInstallRequestTests|SplitPersistenceTests|SplitShortcutTests|SplitTests|TabDragTests|UpdateChannelTests|UserAgentTests|UserAgentRecordTests|WebInspectorTests|WindowRoleTests|WindowTopTests|Zer0MarkTests|ZZ'
+	#
+	# 2026-09-03: the second process had grown from 180 to 250 tests and crossed
+	# the same cliff. Five affected suites all passed in isolation; the stable
+	# measured boundary was a 219-test remainder, 19 WebKit I/O tests and the 12
+	# ExtensionHost tests. One 31-test process containing both WebKit groups
+	# still failed, so that tempting simplification is not equivalent.
+	# Later that day the 461-test main process passed while still leaving two
+	# WebContent PAC-failure reports. Exact groups between 34 and 89 tests stayed
+	# clean; recombinations between 74 and 372 tests reproduced the reports.
+	# Keep suite filters anchored: an unanchored SettingsTests filter also matches
+	# methods in ChatSettingsTests and silently splits one suite across helpers.
+	exact_suites() {
+		printf '^Zer0ShellTests\\.(%s)/' "$1"
+	}
+
+	readonly HEAVY='EnginePolicyTests|NavigationRoundTripTests|ExtensionPageTests|ExtensionDownloadRefusalTests|InstallOfferTests|ExtensionCompatTests|ExtensionStatusTests|ExtensionTabTests|ExtensionConsentTests|ExtensionConsentScrollTests|ExtensionPinTests|ExtensionPopupDialogTests|StoreInstallButtonStateTests|StoreInstallFallbackTests|StoreInstallHostRuleTests|StoreInstallMessageTests|StoreInstallRequestTests|SplitPersistenceTests|SplitShortcutTests|SplitTests|TabDragTests|UpdateChannelTests|UserAgentTests|UserAgentRecordTests|WebInspectorTests|WindowRoleTests|WindowTopTests|Zer0MarkTests|ZZ.*'
+	readonly WEBKIT_IO='DownloadEndToEndTests|DownloadResumeTests|NavigationStateTests|ExtensionApiTests'
+	readonly EXTENSION_HOST='ExtensionHostTests'
+	readonly APPKIT_STATE='BookmarkTests|CommandBarFocusTests|SettingsTests|ShortcutTests'
+	readonly PAGE_SURFACE='HistoryAndDownloadPageTests|ImageCopyNoticeTests|SidebarWidthTests|SiteIconTests'
+	readonly WEBKIT_RUNTIME='ContentBlockingTests|ImageCopyTests|InternalPageTests|PageDialogTests|PagePrintTests|PageProcessTests|PopupTests|SitePermissionTests|SpaceLensTests'
+	readonly CHAT_AND_IDENTITY='AboutVersionTests|AdoptedPaletteTests|AirTrafficTests|AuthLedgerTests|AuthSourceRuleTests|BrowserWindowClaimTests|BundleIdTests|CertificateFactsTests|ChatPageTests|ChatProseTests|ChatProviderTests|ChatSettingsTests'
+	readonly INPUT_AND_DOWNLOADS='ChromeParityTests|ChromeTintTests|CommandBarDestinationTests|ConfigTests|DesignVocabularyTests|DownloadErrorMappingTests|DownloadHonestyTests|DownloadRoundTripTests|DownloadShortcutTests|ExtensionUnreadTests|ExternalSchemeDoorTests|ExternalSchemeTests|KeyPressTests'
+	readonly MCP_RUNTIME='LiveProxyTests|LucideIconTests|McpConnectionStatusTests|McpConversationTests|McpFailureTests|McpHttpLinkTests|McpIdentifierTests|McpMalformedTests|McpRuntimeTests|McpVocabularyTests|MotionTests|NativeHostFramingTests|NativeHostRowTests|NativeMessagingConversationTests|NativeMessagingGateTests|NavigationStackReportTests|OnePasswordProbe|OnePasswordSignInProbe|PageChromeTests'
+	readonly PERSISTENCE_AND_TRUST='PageDialogSourceRuleTests|PaletteContrastTests|PasswordTests|PersistenceTests|SecretStoreChannelTests|ServerTrustGateTests|SessionPersistenceTests'
+	readonly SHARDED="$HEAVY|$WEBKIT_IO|$EXTENSION_HOST|$APPKIT_STATE|$PAGE_SURFACE|$WEBKIT_RUNTIME|$CHAT_AND_IDENTITY|$INPUT_AND_DOWNLOADS|$MCP_RUNTIME|$PERSISTENCE_AND_TRUST"
+	# This suite renders real windows on the main actor. In the main shard it
+	# starved an unrelated five-second timer past 20 seconds; in HEAVY it moved
+	# the same scheduling cliff into the WebKit download suites. Alone it takes
+	# six seconds, so a third shard removes the contention rather than hiding it.
+	readonly SIDEBAR_LAYOUT='SidebarLayoutTests'
 	(cd apple &&
 		swift build &&
 		echo "==> swift test (main)" &&
-		swift test --skip "$HEAVY" &&
-		echo "==> swift test (second list)" &&
-		swift test --filter "$HEAVY")
+		swift test --skip "$(exact_suites "$SHARDED|$SIDEBAR_LAYOUT|PageMenuTests")" &&
+		echo "==> swift test (heavy remainder)" &&
+		swift test --filter "$(exact_suites "$HEAVY")" &&
+		echo "==> swift test (WebKit I/O)" &&
+		swift test --filter "$(exact_suites "$WEBKIT_IO")" &&
+		echo "==> swift test (extension host)" &&
+		swift test --filter "$(exact_suites "$EXTENSION_HOST")" &&
+		echo "==> swift test (AppKit state)" &&
+		swift test --filter "$(exact_suites "$APPKIT_STATE")" &&
+		echo "==> swift test (page surface)" &&
+		swift test --filter "$(exact_suites "$PAGE_SURFACE")" &&
+		echo "==> swift test (WebKit runtime)" &&
+		swift test --filter "$(exact_suites "$WEBKIT_RUNTIME")" &&
+		echo "==> swift test (chat and identity)" &&
+		swift test --filter "$(exact_suites "$CHAT_AND_IDENTITY")" &&
+		echo "==> swift test (input and downloads)" &&
+		swift test --filter "$(exact_suites "$INPUT_AND_DOWNLOADS")" &&
+		echo "==> swift test (MCP runtime)" &&
+		swift test --filter "$(exact_suites "$MCP_RUNTIME")" &&
+		echo "==> swift test (persistence and trust)" &&
+		swift test --filter "$(exact_suites "$PERSISTENCE_AND_TRUST")" &&
+		echo "==> swift test (sidebar layout)" &&
+		swift test --filter "$(exact_suites "$SIDEBAR_LAYOUT")" &&
+		echo "==> swift test (isolated page menus)" &&
+		run_page_menu_tests)
 
 	# The shared set is locked from both sides. `swift build` above proves the
 	# macOS half; this proves the same files still compile against the iOS SDK

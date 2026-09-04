@@ -40,6 +40,17 @@ struct ExtensionActionBar: View {
     /// Which way a popup opens. The sidebar is down the left edge so its popups
     /// come out to the right; the strip is along the top so its come down.
     let popoverEdge: NSRectEdge
+    @State private var scroll: ScrollPosition
+
+    init(
+        ink: Color,
+        popoverEdge: NSRectEdge,
+        scroll: ScrollPosition = ScrollPosition(edge: .leading)
+    ) {
+        self.ink = ink
+        self.popoverEdge = popoverEdge
+        _scroll = State(wrappedValue: scroll)
+    }
 
     /// Sizes that belong to this row rather than to the whole UI, so they are
     /// named here instead of pretending to be design tokens.
@@ -75,7 +86,21 @@ struct ExtensionActionBar: View {
         // that it only takes it when there is something in it.
         if !model.pinnedExtensions.isEmpty {
             content
+                .frame(
+                    minWidth: Self.minimumUsableWidth(
+                        pinnedCount: model.pinnedExtensions.count,
+                        hasUnread: model.extensionWaitingOffRow
+                    )
+                )
         }
+    }
+
+    static func minimumUsableWidth(pinnedCount: Int, hasUnread: Bool) -> CGFloat {
+        let visibleButtons = min(pinnedCount, 2)
+        let buttonsWidth = CGFloat(visibleButtons) * Metrics.target
+        let buttonsSpacing = CGFloat(max(visibleButtons - 1, 0)) * Design.Space.hair
+        let unreadWidth = hasUnread ? Metrics.target : 0
+        return buttonsWidth + buttonsSpacing + unreadWidth
     }
 
     private var content: some View {
@@ -105,6 +130,7 @@ struct ExtensionActionBar: View {
                 }
             }
             .scrollIndicators(.hidden)
+            .scrollPosition($scroll)
             // Without this the scroll view claims every point it is offered and the
             // row eats the list above it — the same defect the space bar has a line
             // about.

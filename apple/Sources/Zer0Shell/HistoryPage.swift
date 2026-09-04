@@ -425,7 +425,10 @@ private struct HistoryRow: View {
             // the page in the space you are in. History is one list across every
             // space; the icon cache behind it is not, and this row is honest
             // about which one it is showing.
-            SiteBadge(subject: model.badge(forHost: host))
+            SiteBadge(
+                subject: model.badge(forHost: host),
+                onTintedSurface: isHighlighted
+            )
 
             VStack(alignment: .leading, spacing: Design.Space.line) {
                 Text(entry.title ?? entry.url)

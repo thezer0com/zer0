@@ -500,13 +500,14 @@ history, not news."*
 
 ## 4. Materials and depth
 
-The project uses system materials rather than fills, because a grey rectangle
-does not track light and dark, does not vibrate against what is behind it, and
-does not look like the platform.
+Floating surfaces use system materials rather than grey fills, because a grey
+rectangle does not track light and dark, does not vibrate against what is behind
+it, and does not look like the platform. The permanent sidebar is the deliberate
+exception: its theme must not sample the wallpaper behind the window.
 
 | Material | Where | Why that one |
 |---|---|---|
-| `.thinMaterial` | The sidebar (`Sidebar`) | It is a large permanent surface with the page next to it. |
+| `Design.Palette.chrome` | The sidebar (`Sidebar`) | It is a large permanent surface whose light or dark theme must remain true against any wallpaper. |
 | `.regularMaterial` | Every floating panel: command bar, find bar, download shelf card, install banner, session warning, consent sheet, and the lifted row during a drag | These sit over content and have to separate from it. |
 | `.bar` | `WindowChrome` | It is a window strip standing in for a title bar, and `.bar` is what the system uses for one. |
 | `.quaternary` | Grouped list backgrounds, keyboard-hint key caps, panel borders | The system's own "recessed surface" fill. |
@@ -600,6 +601,27 @@ group heading.
 **Size last.** Size separates an empty state's headline from its message. It is
 not used to rank items within a list; that is what weight and colour are for.
 
+### Sidebar composition and scroll ownership
+
+The sidebar is one fixed header over one primary vertical scroll owner (ADR-0134):
+
+1. **Spaces come first**, directly under the traffic-light clearance. The chips
+   own horizontal scroll; the add-space control stays fixed at the trailing edge.
+2. **Actions share one row.** New Tab leads and pinned extension buttons trail.
+   The row stays present when no extension is pinned, because New Tab is the
+   sidebar's primary action; extension buttons do not earn a separate strip.
+3. **A hairline closes the header.** It stays still with the two rows above it.
+4. **The tab list owns vertical scroll.** Its headings, rows, insertion affordance
+   and empty state travel together; neither header row may disappear when a long
+   list is scrolled.
+
+The conditional kept-pages shelf and Space Lens remain below the list. Kept is
+as tall as its contents up to 220pt; only an expanded shelf beyond that ceiling
+owns a bounded secondary vertical scroll. Space Lens does not scroll. This
+ordering is behaviour a person depends on, not decoration: spaces establish
+context, actions operate in it, and the list is the primary content that may
+overflow.
+
 **A settings pane does not repeat its own name.** The sidebar row says
 "Shortcuts" and stays on screen the whole time; a `title2` saying it again two
 inches away is chrome that does not pay for itself, and it was on five of the
@@ -689,9 +711,9 @@ checked against these files by the same gate as the rest of the tokens
 | Token | Light | Dark | What it is |
 |---|---|---|---|
 | `background` | `#FAFAFC` | `#0E0F17` | The window's own background. |
-| `chrome` | `#F0F0F6` | `#181925` | The sidebar's surface, under its material. New at adoption: until then no palette owned it. |
+| `chrome` | `#F0F0F6` | `#181925` | The sidebar's painted surface. New at adoption: until then no palette owned it. |
 | `ink` / `inkSecondary` / `inkTertiary` | `#121327` / `#53556B` / `#83859A` | `#ECEDF5` / `#9EA1B5` / `#6E7186` | The `.primary` → `.secondary` → `.tertiary` ladder. The first two clear 4.5:1 everywhere they land; the third is a 3:1 level, and nothing that must be read is set in it. |
-| `accent` | `#3B2FE0` | `#8E86FF` | `.tint`: focus, the drop target, prominent buttons, the mark. Violet where Safari and Chrome run cyan. |
+| `accent` | `#3B2FE0` | `#8E86FF` | `.tint`: focus, the drop target and prominent buttons. Brand artwork owns its separate purple and white ink. Violet where Safari and Chrome run cyan. |
 | `selectedRow` | `#837AE0` | `#635BC9` | The selected sidebar row and the active space chip. **Derived, not picked**: 3:1 against `chrome` so the state is seen, 4.5:1 for `ink` on it so the label is read. |
 | `companionRow` | `#C6C0F2` | `#4A448F` | The other half of a split. The luminance **midpoint** between `chrome` and `selectedRow` — *"plainly less of it"* as a number rather than an impression. |
 | `recessed` / `recessedInner` | `#ECECF3` / `#E2E2EC` | `#1A1B27` / `#222432` | What `Design.Surface.recessed` draws. **Stated, not derived**: `.quaternary.opacity(0.4)` resolved off the ink once the ladder was set at the root, and every settings group went two shades heavier overnight. |
@@ -753,10 +775,9 @@ Everything else still runs on system semantics, unchanged:
 - accent: **`.tint`, and only `.tint`.** The two spellings are not
   interchangeable: `.tint` is a `ShapeStyle` that resolves against the
   environment and honours a `.tint()` applied anywhere up the hierarchy;
-  `Color.accentColor` reads the system setting and ignores it. Since whether
-  zer0 gets an accent of its own is an open decision (below), the spelling that
-  a single `.tint()` at the root can re-point is the one that keeps that
-  decision cheap — so `.tint` is correct and `Color.accentColor` is not. Where
+  `Color.accentColor` reads the system setting and ignores it. zer0's accent is
+  applied once at the root, so `.tint` is correct and `Color.accentColor` is
+  not. Where
   a concrete value was structurally required, the property's type changed to
   `AnyShapeStyle` rather than the style changing to `Color`. One site remains,
   in a file left to another owner — see Debt;
@@ -817,30 +838,31 @@ them.
 The badge is `.accessibilityHidden(true)`: *"the row next to it already says
 which site this is, and hearing 'G' before every title is noise."*
 
-### ~~Open decision: the absence is now urgent~~ — settled by ADR-0043
+### ~~Open decision: the absence is now urgent~~ — settled by ADR-0043 and ADR-0133
 
 The absence of a palette was comfortable while there was nothing to be a palette
 *of*. That changed, ADR-0040 said so and declined to settle it, and this is the
 answer to the three questions it left open:
 
-1. **The mark keeps `currentColor`** and takes the tint it is given, which is
-   now the palette's accent rather than the person's macOS setting. The SVG's
-   own header argued for this and it still does: *"the size belongs to whoever
-   draws it; so does the colour."*
-2. **There is a zer0 accent, and it replaces `.tint`'s source.** The browser is
+1. **There is a zer0 accent, and it replaces `.tint`'s source.** The browser is
    no longer the system's colour. Adopting it was one modifier at the root
    precisely because the accent was always spelled `.tint` and never
    `Color.accentColor`.
-3. **What inherits from it did have to be re-derived**, and two things did not
+2. **What inherits from it did have to be re-derived**, and two things did not
    inherit at all: `.selection` and the sidebar's material, both above.
    `SiteBadge` is deliberately *not* re-derived — it is a hash of a hostname,
    not an accent, and its contrast floor stands on its own argument.
+3. **Brand artwork is not a UI accent.** The canonical mark owns its purple and
+   white fills; an About panel or a browser-page badge asks for `.brand` and
+   gets those fills on every ground. A quiet surface asks for `.quiet` and gets
+   the bare ring in its semantic foreground. No surrounding view owns either
+   decision (ADR-0133).
 
 ADR-0040's trap is still worth reading: *"a mark that only exists in
-`currentColor` has never been tested against a background it must live on, and
-colour can break a shape that works in black — a thin cut between two mid-tone
-fills has far less contrast than the same cut in black on white."* The mark
-appears in exactly two places and both are rendered in `design/adopted/`.
+`currentColor` has never been tested against a background it must live on."*
+The adopted artwork answered by owning its colour, and the logo boards render
+brand ink on light and dark grounds plus the quiet treatment in its real empty
+state hierarchy.
 
 **The rule that replaces "do not add a colour constant":** a colour constant
 belongs in `Design.Palette` and nowhere else. That is stricter than the ban it
@@ -850,22 +872,24 @@ replaces, and a test enforces the half of it that can be.
 
 ## 8. The mark
 
-`design/logo/zer0.svg` is the source of truth; `Zer0Mark` is a port of its path
-data into a SwiftUI `Shape`, coordinate for coordinate, in the SVG's own 256×256
-viewBox so the two can be read side by side. It is geometry rather than a
-bundled asset for the same reason the SVG carries no `<text>` and no `stroke`: a
-path takes the colour of whatever draws it, stays sharp at any size, and there
-is no resource that can fail to load.
+`design/logo/zer0.svg` is the source of truth: a purple cut zero with a white
+`zer` inlaid on its upper-right band. The letters are paths, not text, and sit
+on the ring rather than beside it — one lockup that reads *zer0*. Its viewBox is
+170×199. Apple ports both paths coordinate for coordinate into SwiftUI; Linux
+parses the SVG into GSK paths at startup and refuses malformed artwork rather
+than repairing it.
 
-**The mark appears in exactly two places**, and `BrowserView` states the rule:
+**A surface names one of two treatments at the rendering door** (ADR-0133):
 
-> *"It earns it here because it is the one moment the browser is not being used
-> for anything — the sidebar, the command bar and the page are all tools in
-> hand, and a logo on a tool in hand is an interruption."*
+1. **Quiet** — the bare ring in the surface's semantic foreground. This is the
+   default and is used by the browser's empty screen, where the mark is large,
+   tertiary and subordinate to the New Tab action.
+2. **Brand** — the artwork's own purple ring and white inlay wherever the pixel
+   budget can carry both. About uses it at `Glyph.mark` (72); a row for one of
+   the browser's own pages uses the hinted purple ring at 16pt.
 
-1. `NothingOpenScreen` — `Glyph.mark` (72), `.tertiary`, quiet.
-2. `AboutView` — `Glyph.mark` (72), `.tint`, *"the one place it is allowed to be
-   the loudest thing on screen."*
+Apple spells the door `Zer0MarkGlyph.Ink`; Linux spells it `MarkTreatment`.
+Callers do not select layers or copy artwork colours.
 
 **There is a size floor, and it is measured in rendered pixels.** ADR-0040
 settles it at **32 px, not 24**: at 32 the canonical cut *"survives only as a
@@ -874,16 +898,11 @@ failure because it looks intentional."* Pixels rather than points is deliberate:
 16pt@2x and 32pt@1x get the small drawing, while 32pt@2x gets the canonical one.
 
 `design/logo/zer0-small.svg` is that small drawing, and it is a **redraw, not a
-scale** — the ring goes 32u → 44u, the gap and slip roughly double, and the mark
-is *shortened*, 80×104 → 72×94, *"because the grid scales by the tallest
-dimension and height given up buys thickness everywhere else. This is what type
-designers call hinting, and refusing to do it is how a mark ends up as a smudge
-in the Dock."*
-
-**It is not ported into code.** `Zer0Mark` carries only `zer0.svg`. Both current
-uses are at `Glyph.mark` (72), well clear of the floor, so nothing is broken —
-but there is no correct drawing available in Swift below 32 px, and two places
-in the repository still quote the superseded 24 (see Debt).
+scale** — the ring thickens from 34u to 46.75u, the gap widens from 16u to 23u,
+the slip grows from 8u to 11u and the outer ellipse shortens to 72.25×84.55.
+The inlay is dropped: at 32px its 28 units leave five pixels for three letters.
+Apple ports this master too; the icon generator and `Zer0MarkGlyph` use the same
+32-pixel threshold.
 
 **The app icon's body is the system's.** On macOS 26 the platform draws the
 rounded square and insets the artwork, so the mark ships free-standing on
@@ -897,9 +916,11 @@ speed or privacy."* A browser icon competing with a globe, a compass and a fox
 *"does better as an unexplained shape than as a worse metaphor"* — at the cost
 of having no recognition on day one.
 
-`Zer0MarkTests.swift` holds four properties: the path is not empty, it stays
-inside the box it is given, it fills that box rather than hiding in a corner,
-and there is a hole in the middle with a ring around it.
+`Zer0MarkTests.swift` locks both masters' geometry, the canonical frame and
+inlay, artwork purple, and the one threshold shared by hinting and detail.
+`tokens.rs` locks source-order layers and the quiet/brand selection. Pixel
+boards inspect About on light and dark, a magnified 16pt badge, the quiet empty
+state and every generated app-icon size.
 
 ---
 
@@ -913,8 +934,9 @@ form.
 
 Every empty state in the codebase uses `EmptyState` and every one of them offers
 an action, except History, where there is genuinely nothing to offer but
-browsing — **and except the chat page, which is a different kind of screen and
-is treated as one below.**
+browsing; the sidebar, whose fixed New Tab action remains directly above it;
+**and the chat page, which is a different kind of screen and is treated as one
+below.**
 
 The browser's own empty screen was the exception until recently, and it was the
 exception in the worst possible place: the screen everyone meets on day one had
@@ -924,7 +946,7 @@ prominent button they do.
 | Screen | Glyph | Title | The action |
 |---|---|---|---|
 | Browser, nothing open | the mark | "Nothing open" | prominent "New Tab" on `.defaultAction`, with the chord under it read from the live keymap. The message says what the button is about to do — the command bar opening on "Where to?" — rather than printing a shortcut that rebinding would turn into a lie. |
-| Sidebar, empty space | `rectangle.stack` | "Nothing open here" | prominent "New Tab". *"Without it the sidebar is a blank panel with one small button in the corner, which is the worst possible first impression of the feature the whole browser is built around."* |
+| Sidebar, empty space | `rectangle.stack` | "Nothing open here" | none; the fixed "New Tab" action remains visible directly above the empty state, so repeating it here would give one action two competing controls. |
 | Command bar, no query | `command` | "Where to?" | teaches what the bar takes, plus the ↑↓ / ↩ / ⌘↩ / ⎋ hints |
 | Command bar, no results | `magnifyingglass` | "No results for “…”" | says the search came back empty rather than leaving a field floating on its own |
 | Downloads | `arrow.down.circle` | "Nothing downloaded yet" | "Open Downloads Folder" |
@@ -1471,9 +1493,9 @@ are a second recess inside a view that already has one at full strength.
 
 **`.tint` is correct.** The reasoning is in §7: `.tint` resolves against the
 environment and a single `.tint()` at the root can re-point it,
-`Color.accentColor` reads the system setting and cannot. Since whether zer0 has
-an accent of its own is explicitly open (ADR-0040), the spelling that keeps
-that decision cheap wins.
+`Color.accentColor` reads the system setting and cannot. zer0 now has its own
+accent (ADR-0043), so the spelling the root can re-point is the one that keeps
+the decision true everywhere.
 
 - `CommandBar` — both `Color.accentColor` sites are now `.tint`, one via
   `AnyShapeStyle` so the highlighted and unhighlighted branches share a type.
@@ -1573,8 +1595,6 @@ version exists, it says so.
   ultramarine on neutrals tinted to the same temperature. What it also settled,
   because a root `.tint()` cannot reach them: the selected sidebar row, the
   sidebar's own surface, and the three status colours.
-- **The small mark.** `design/logo/zer0-small.svg` is not ported;
-  `Zer0Mark` cannot be drawn correctly below 32 rendered pixels.
 - **An ephemeral indicator while browsing** (§10). The space chip already
   carries an `eye.slash.fill` glyph; there is nothing on the window. ADR-0023
   names the gap and the shape of the answer, and says the decision is its own.
@@ -1609,9 +1629,10 @@ version exists, it says so.
   of what used to be one entry here. The shell's materials are still
   unconditional, and nothing reads `accessibilityReduceTransparency` or
   `accessibilityDifferentiateWithoutColor`.
-- **Linux appearance.** The core/shell split exists so the Linux shell is a new
-  host rather than a rewrite, but no second shell exists, so no token in this
-  file has yet been tested against a platform that would disagree with it.
+- ~~**Linux appearance.**~~ The GTK shell now consumes `design/tokens.toml` and
+  the canonical SVG directly (ADR-0117, ADR-0122, ADR-0133). Platform-specific
+  visual QA remains narrower than Apple's, but the second shell is no longer an
+  open decision.
 
 ---
 
@@ -1638,8 +1659,8 @@ the ones this file adds:
 6. Is the empty state a product screen with a first step in it, or an apology?
 7. Does the destructive warning name what is lost, or does it just ask "are you
    sure?"
-8. Does anything you added a colour to have a reason to be that colour, given
-   that the project has no palette? If it is the accent, is it `.tint` rather
-   than `Color.accentColor`?
+8. Does anything you added a colour to have a reason to be that colour? If it is
+   UI accent, is it `.tint` rather than `Color.accentColor`? If it is artwork,
+   does the artwork own the fill rather than inheriting a surrounding style?
 9. If it takes space above or over the page permanently, does it pay for itself
    on *every* page? If it does not, it is conditional or it does not ship.

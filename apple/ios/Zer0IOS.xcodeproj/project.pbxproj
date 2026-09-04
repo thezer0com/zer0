@@ -29,6 +29,7 @@
 		4F0000000000000000000B11 /* ExtensionHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A11 /* ExtensionHost.swift */; };
 		4F0000000000000000000B12 /* ExtensionPopupDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */; };
 		4F0000000000000000000B13 /* ExternalScheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A13 /* ExternalScheme.swift */; };
+		4F0000000000000000000B2E /* ImageCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A2E /* ImageCopy.swift */; };
 		4F0000000000000000000B14 /* LucideIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A14 /* LucideIcon.swift */; };
 		4F0000000000000000000B15 /* McpHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A15 /* McpHost.swift */; };
 		4F0000000000000000000B16 /* McpHttpLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000000000000000000A16 /* McpHttpLink.swift */; };
@@ -81,6 +82,7 @@
 		4F0000000000000000000A11 /* ExtensionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExtensionHost.swift; path = ../Sources/Zer0Shell/ExtensionHost.swift; sourceTree = "<group>"; };
 		4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExtensionPopupDialogs.swift; path = ../Sources/Zer0Shell/ExtensionPopupDialogs.swift; sourceTree = "<group>"; };
 		4F0000000000000000000A13 /* ExternalScheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExternalScheme.swift; path = ../Sources/Zer0Shell/ExternalScheme.swift; sourceTree = "<group>"; };
+		4F0000000000000000000A2E /* ImageCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageCopy.swift; path = ../Sources/Zer0Shell/ImageCopy.swift; sourceTree = "<group>"; };
 		4F0000000000000000000A14 /* LucideIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LucideIcon.swift; path = ../Sources/Zer0Shell/LucideIcon.swift; sourceTree = "<group>"; };
 		4F0000000000000000000A15 /* McpHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = McpHost.swift; path = ../Sources/Zer0Shell/McpHost.swift; sourceTree = "<group>"; };
 		4F0000000000000000000A16 /* McpHttpLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = McpHttpLink.swift; path = ../Sources/Zer0Shell/McpHttpLink.swift; sourceTree = "<group>"; };
@@ -162,6 +164,7 @@
 				4F0000000000000000000A11 /* ExtensionHost.swift */,
 				4F0000000000000000000A12 /* ExtensionPopupDialogs.swift */,
 				4F0000000000000000000A13 /* ExternalScheme.swift */,
+				4F0000000000000000000A2E /* ImageCopy.swift */,
 				4F0000000000000000000A14 /* LucideIcon.swift */,
 				4F0000000000000000000A15 /* McpHost.swift */,
 				4F0000000000000000000A16 /* McpHttpLink.swift */,
@@ -313,6 +316,7 @@
 				4F0000000000000000000B11 /* ExtensionHost.swift in Sources */,
 				4F0000000000000000000B12 /* ExtensionPopupDialogs.swift in Sources */,
 				4F0000000000000000000B13 /* ExternalScheme.swift in Sources */,
+				4F0000000000000000000B2E /* ImageCopy.swift in Sources */,
 				4F0000000000000000000B14 /* LucideIcon.swift in Sources */,
 				4F0000000000000000000B15 /* McpHost.swift in Sources */,
 				4F0000000000000000000B16 /* McpHttpLink.swift in Sources */,

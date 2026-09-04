@@ -99,7 +99,10 @@ struct TabDrawer: View {
                 // a conversation wears the favicon of the page it is about, and a
                 // second copy of that rule here is where the two hosts would
                 // start to disagree.
-                SiteBadge(subject: model.badge(for: tab))
+                SiteBadge(
+                    subject: model.badge(for: tab),
+                    onTintedSurface: isActive
+                )
                     .opacity(tab.loadingComplete ? 1 : 0.4)
 
                 Text(tab.displayTitle)
