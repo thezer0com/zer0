@@ -48,9 +48,9 @@
 # WebKit-7624.4.5.14.1.
 # Canary sha resolved 2026-08-16: main at 79cf236cfb8096f9bf07abe323ae8be87820c54f.
 
-WEBKIT_TAG_STABLE=WebKit-7624.4.5.14.1
+WEBKIT_TAG_STABLE=WebKit-7624.5.1.11.3
 WEBKIT_CANARY_REF=main
-WEBKIT_CANARY_SHA=79cf236cfb8096f9bf07abe323ae8be87820c54f
+WEBKIT_CANARY_SHA=1f0200061b2d1e0f908f60be104bd45f53cf4570
 
 # Where the source tree and build products live. Always overridable from the
 # environment; this is only the default. Kept outside the repo on purpose: the
